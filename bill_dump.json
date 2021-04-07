@@ -1,0 +1,36 @@
+{
+    "_about": "http://data.parliament.uk/resources/754405",
+    "billType": "Ballot",
+    "date": {
+        "_value": "2018-12-21",
+        "_datatype": "dateTime"
+    },
+    "homePage": "http://services.parliament.uk/bills/2017-19/prisonsinterferencewithwirelesstelegraphy.html",
+    "identifier": {
+        "_value": "2060"
+    },
+    "label": {
+        "_value": "Prisons (Interference with Wireless Telegraphy)"
+    },
+    "session": [
+        {
+            "_about": "http://data.parliament.uk/resources/730830",
+            "displayName": "2017-2019"
+        }
+    ],
+    "sponsors": [
+        {
+            "_about": "http://data.parliament.uk/resources/754405/sponsors/1",
+            "sponsorPrinted": [
+                "Baroness Pidding"
+            ]
+        },
+        {
+            "_about": "http://data.parliament.uk/resources/754405/sponsors/2",
+            "sponsorPrinted": [
+                "Maria Caulfield"
+            ]
+        }
+    ],
+    "title": "Prisons (Interference with Wireless Telegraphy) Bill"
+}
