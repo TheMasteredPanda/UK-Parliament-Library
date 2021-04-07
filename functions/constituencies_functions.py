@@ -41,7 +41,7 @@ class ConstituenciesFunctions():
             c_item = Constituency(item)
             
             for result_item in results:
-                if result_item.get_constituency_id() == c_item.get_id():
+                if result_item._get_constituency_resource() == c_item._get_constituency_resource():
                     c_item._set_election_result(result_item)
 
 

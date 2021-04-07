@@ -7,7 +7,7 @@ class Constituency():
         constituency_json: The deserialized data.
         """
         self.constituency_type = constituency_json['constituencyType']
-        self.consituency_id = constituency_json['_about'].split('/')[-1]
+        self.constituency_resource_url = constituency_json['_about']
         self.gss_code = constituency_json['gssCode']
         self.label  = constituency_json['label']['_value']
         self.os_name = constituency_json['osName'] #What does 'osName' represent?
@@ -37,8 +37,11 @@ class Constituency():
     def get_election_result(self):
         return self.result
 
-    def get_id(self):
-        return self.consituency_id
-
     def get_established_date(self):
         return self.established_date
+
+    def get_constituency_id(self):
+        return self.constituency_resource_url.split('/')[-1]
+
+    def _get_constituency_resource(self):
+        return self.constituency_resource_url
