@@ -71,7 +71,6 @@ class UKParliament():
     def members(self):
         return self.member_functions
 
-
     def load(self, election_id: str, use_list: bool):
         """
         Loads all the modules.
@@ -84,12 +83,14 @@ class UKParliament():
         constituencies module and members module are loaded in that order. After
         that every other module is loaded.
         """
-        results = utils.load_data(self.session, f'{utils.URL}/electionresults?electionId={election_id}&_pageSize=100')
+        results = utils.load_data(self.session, f'{utils.URL}/electionresults.json?electionId={election_id}&_pageSize=100', 100)
 
         for item in results:
             self.election_results.append(ElectionResult(self.session, item))
+
+        print(len(self.election_results))
         self.constituencies_functions._index(self.session, self.election_results, )
-        self.member_functions._index(self.session, self.election_results)
+        self.member_functions._index(self.session, self.election_results, self.constituencies_functions)
 
     def _check_validity_of_identifier(self, election_identifier: str):
         """
@@ -101,10 +102,10 @@ class UKParliament():
         returns the election id if the election identifier is valid, else a false boolean.
         """
         if election_identifier is None or election_identifier == '': return False
-        if election_identifier.split('-') != 3 and election_identifier.isnumeric() is False: return False
+        if len(election_identifier.split('-')) != 3 and election_identifier.isnumeric() is False: return False
         response = None
 
-        if election_identifier.split('-') == 3:
+        if len(election_identifier.split('-')) == 3:
             response = self.session.get(f'{utils.URL}/elections.json?date={election_identifier}')
         else:
             respone = self.session.get(f'{utils.URL}/elections/{election_identifier}')
@@ -113,17 +114,7 @@ class UKParliament():
             raise Exception("Couldn't check the validity of the election identifer")
 
         content = json.loads(response.content)
-
         if int(content['result']['totalResults']) == 0: return False
-        return election_identifier if election_identifier.isnumeric() else content['result']['_about'].split('/')[-1]
-
-
+        return election_identifier if election_identifier.isnumeric() else content['result']['items'][0]['_about'].split('/')[-1]
 
 parliament = UKParliament('2019-12-12')
-
-'''members = parliament.members().fetch_all_members()
-print(json.dumps(members['result']['items'][0], indent=4))
-'''
-response = requests.get('https://lda.data.parliament.uk/elections.json')
-content = json.loads(response.content)
-print(json.dumps(content['result1167964']['items'], indent=4))

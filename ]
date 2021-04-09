@@ -35,7 +35,7 @@ class ConstituenciesFunctions():
 
         request = session.get(f'{utils.URL}/constituencies.json?_sort=endedDate&_pageSize=650')
         if request.status_code != 200: raise Exception(f"Couldn't fetch used constituencies. Code: {request.status_code}")
-        c_results = json.loads(request.content)['result']['items']
+        c_results = json.loads(request.content)#['result']['items']
 
         for item in c_results: 
             c_item = Constituency(item)

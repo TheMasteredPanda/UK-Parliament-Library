@@ -1,15 +1,16 @@
 
 class PartyMember():
     def __init__(self, json_party_member):
+        print(json_party_member)
         self.member_resource_url = json_party_member['_about']
-        self.middle_name = json_party_member['additionalName']['_value']
+        self.middle_name = json_party_member['additionalName']['_value'] if 'additionalName' in json_party_member else ''
         self.first_name = json_party_member['familyName']['_value']
         self.last_name = json_party_member['givenName']['_value']
         self.gender = json_party_member['gender']['_value']
-        self.website = json_party_member['homePage']
+        self.website = json_party_member['homePage'] if 'homePage' in json_party_member else ''
         self.label = json_party_member['label']['_value'] #TODO: What is this label for? 
         self.party = json_party_member['party']['_value']
-        self.twitter = json_party_member['twiter']['_value'] #TODO: This might have to become a list if more social media platforms are linked
+        self.twitter = json_party_member['twitter']['_value'] if 'twitter' in json_party_member else '' #TODO: This might have to become a list if more social media platforms are linked
         self.constituency = None
 
     def get_full_name(self, middle_name: bool = False):

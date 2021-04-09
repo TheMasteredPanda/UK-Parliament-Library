@@ -19,17 +19,20 @@ class ElectionResult():
         self.result = result_json['resultOfElection']
         self.turnout = result_json['turnout']
         self.candidates = []
+        self.election_label = result_json['election']['label']['_value']
+        response = requests.get(f'{utils.URL}/electionresults/{self.result_id}.json') # Gets the winner and the rest of the candidates. This includes candidate voting results and the order for the candidates from the winner to the least voted candidate.
 
-        response = requests.get(f'{utils.URL}/electionresults/{self.result_id}') # Gets the winner and the rest of the candidates. This includes candidate voting results and the order for the candidates from the winner to the least voted candidate.
-        
         if response.status_code != 200:
-            raise Exception(f"Couldn't fetch election results for result entry {self.result_id}/{result_json['label']['_value']}")
+            raise Exception(f"Couldn't fetch election results for result entry {self.result_id}/{result_json['constituency']['label']['_value']}")
         content = json.loads(response.content)
 
         for candidate in content['result']['primaryTopic']['candidate']:
             self.candidates.append({'name': candidate['fullName']['_value'], 'votes': candidate['numberOfVotes'], 'order': candidate['order'], 'party': candidate['party']['_value']})
 
         self.winner = list(filter(lambda c: c['order'] == 1, self.candidates))[0]
+
+    def get_election_label(self):
+        return self.election_label
 
     def _get_constituency_resource(self):
         return self.constituency_resource_url
