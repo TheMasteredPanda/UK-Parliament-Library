@@ -10,8 +10,6 @@ class PartyMember():
         self.label = json_party_member['label']['_value'] #TODO: What is this label for? 
         self.party = json_party_member['party']['_value']
         self.twitter = json_party_member['twitter']['_value'] if 'twitter' in json_party_member else '' #TODO: This might have to become a list if more social media platforms are linked
-        self.constituency = None
-
 
     @classmethod
     def create(cls, json_party_member):

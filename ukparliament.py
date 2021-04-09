@@ -84,7 +84,6 @@ class UKParliament():
             for item in results:
                 tasks.append(ElectionResult.create(session, item))
 
-            print(f'Executing {len(tasks)} election results tasks')
             self.election_results.extend(await asyncio.gather(*tasks))
             await self.constituencies_functions._index(session, self.election_results)
             await self.member_functions._index(session, self.election_results, self.constituencies_functions)
@@ -120,4 +119,5 @@ start = time.time()
 asyncio.run(parliament.load('2019-12-12'))
 end = time.time()
 print(end - start)
-print(f'Members indexed: {len(parliament.members().get_members())}')
+for member in parliament.members().get_members():
+    print(member.get_full_name())
