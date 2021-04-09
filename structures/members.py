@@ -1,7 +1,6 @@
 
 class PartyMember():
     def __init__(self, json_party_member):
-        print(json_party_member)
         self.member_resource_url = json_party_member['_about']
         self.middle_name = json_party_member['additionalName']['_value'] if 'additionalName' in json_party_member else ''
         self.first_name = json_party_member['familyName']['_value']
@@ -12,6 +11,11 @@ class PartyMember():
         self.party = json_party_member['party']['_value']
         self.twitter = json_party_member['twitter']['_value'] if 'twitter' in json_party_member else '' #TODO: This might have to become a list if more social media platforms are linked
         self.constituency = None
+
+
+    @classmethod
+    def create(cls, json_party_member):
+        return cls(json_party_member)
 
     def get_full_name(self, middle_name: bool = False):
         return f'{self.first_name} {self.last_name}'

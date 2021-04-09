@@ -1,9 +1,8 @@
 import json
-import requests
-
+import aiohttp
 URL = 'http://eldaddp.azurewebsites.net'
 
-def load_data(session: requests.Session, url: str, page_size: int = -1):
+async def load_data(url: str, session: aiohttp.ClientSession):
     """
     Iterates through results that are pageinated and stiches all the results together.
 
@@ -11,19 +10,22 @@ def load_data(session: requests.Session, url: str, page_size: int = -1):
     url: The URL of the first (page 0) page.
     """
 
-    def iterate(session: requests.Session, url: str, results: list):
-        response = session.get(url)
-        if response.status_code != 200:
-            raise Exception(f"Couldn't continue to iterate over pages of data as {page_url} responded with error code {response.status_code}")
-        content = json.loads(response.content)
-        if len(content['result']['items']) > 0: results.extend(content['result']['items'])
+    async def iterate(url: str, results: list):
+        split_url = url.split('&')
+        if len(split_url) == 1: split_url = url.split('?')
+        page_size = list(filter(lambda k: '_pageSize=' in k, split_url))[0].split('=')[1]
+        async with aiohttp.ClientSession().get(url) if session is None else session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't continue to iterate over pages of data as {url} responded with error code {resp.status}")
+            content = await resp.json()
+            if len(content['result']['items']) > 0: results.extend(content['result']['items'])
 
-        if 'next' not in content['result']:
-            return results
-        else:
-            if page_size == -1:
-                return iterate(session, content['result']['next'], results)
+            if 'next' not in content['result']:
+                return results
             else:
-                return iterate(session, f"{content['result']['next']}&_pageSize={page_size}", results)
+                if page_size == -1:
+                    return await iterate(content['result']['next'], results)
+                else:
+                    return await iterate(f"{content['result']['next']}&_pageSize={page_size}", results)
 
-    return iterate(session, url, [])
+    return await iterate(url, [])

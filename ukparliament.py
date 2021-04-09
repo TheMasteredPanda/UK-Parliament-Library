@@ -1,6 +1,8 @@
+import time
+import asyncio
 import json
 import utils
-import requests
+import aiohttp
 from functions.member_functions import MemberFunctions
 from functions.constituencies_functions import ConstituenciesFunctions
 from structures.elections import ElectionResult
@@ -21,10 +23,25 @@ index unnecessary data.
 '''
 
 class UKParliament():
-    def __init__(self, election_identifier: str, use_list: bool = False, modules: list = ['bills']):
+    def __init__(self):
+        self.member_functions = MemberFunctions()
+        self.constituencies_functions = ConstituenciesFunctions()
+        self.election_results = [] # A list of serialized election results.
+
+    def members(self):
+        return self.member_functions
+
+    async def load(self, election_identifer: str, modules: list[str] = ['bills']):
         """
-        Returns a UKParliament instance with serialized data from the UK Parliament
-        Rest API. Each module specified will be accessible through this point of contact.
+        Loads all the modules.
+
+        election_id: The id of the election either provided or derived from the 
+        _check_validity_of_identifer function. This is used to determine what
+        information should be loaded into this instance. 
+
+        Once the election results of this election have been fetched both the
+        constituencies module and members module are loaded in that order. After
+        that every other module is loaded.
 
         election_identifier: a string parameter that can either be an election id, that
         is the id used in the UK Parliament API to identify elections, or the date the
@@ -59,40 +76,20 @@ class UKParliament():
             - thesaurus: Thesaurus
             - e_petitions: e-Petitions
         """
-        self.session = requests.Session() # Using session for connection pooling capabilities. 
-        election_id = self._check_validity_of_identifier(election_identifier)
-        if election_id is False: raise Exception(f'Provided election identifier is not valid.')
-        self.member_functions = MemberFunctions()
-        self.constituencies_functions = ConstituenciesFunctions()
-        self.election_results = [] # A list of serialized election results.
-        self.load(str(election_id), use_list)
-        self.election_id = election_id
+        async with aiohttp.ClientSession() as session: 
+            election_id = await self._check_validity_of_identifier(session, election_identifer)
+            results = await utils.load_data(f'{utils.URL}/electionresults.json?electionId={election_id}&_pageSize=100', session)
+            tasks = []
 
-    def members(self):
-        return self.member_functions
+            for item in results:
+                tasks.append(ElectionResult.create(session, item))
 
-    def load(self, election_id: str, use_list: bool):
-        """
-        Loads all the modules.
+            print(f'Executing {len(tasks)} election results tasks')
+            self.election_results.extend(await asyncio.gather(*tasks))
+            await self.constituencies_functions._index(session, self.election_results)
+            await self.member_functions._index(session, self.election_results, self.constituencies_functions)
 
-        election_id: The id of the election either provided or derived from the 
-        _check_validity_of_identifer function. This is used to determine what
-        information should be loaded into this instance. 
-
-        Once the election results of this election have been fetched both the
-        constituencies module and members module are loaded in that order. After
-        that every other module is loaded.
-        """
-        results = utils.load_data(self.session, f'{utils.URL}/electionresults.json?electionId={election_id}&_pageSize=100', 100)
-
-        for item in results:
-            self.election_results.append(ElectionResult(self.session, item))
-
-        print(len(self.election_results))
-        self.constituencies_functions._index(self.session, self.election_results, )
-        self.member_functions._index(self.session, self.election_results, self.constituencies_functions)
-
-    def _check_validity_of_identifier(self, election_identifier: str):
+    async def _check_validity_of_identifier(self, session: aiohttp.ClientSession, election_identifier: str):
         """
         Checks the validity of the election identifier by checking if the entry exists on the api.
 
@@ -103,18 +100,24 @@ class UKParliament():
         """
         if election_identifier is None or election_identifier == '': return False
         if len(election_identifier.split('-')) != 3 and election_identifier.isnumeric() is False: return False
-        response = None
+        url = None
 
         if len(election_identifier.split('-')) == 3:
-            response = self.session.get(f'{utils.URL}/elections.json?date={election_identifier}')
+            url = f'{utils.URL}/elections.json?date={election_identifier}'
         else:
-            respone = self.session.get(f'{utils.URL}/elections/{election_identifier}')
+            url = f'{utils.URL}/elections/{election_identifier}'
 
-        if response.status_code != 200:
-            raise Exception("Couldn't check the validity of the election identifer")
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception("Couldn't check the validity of the election identifer")
 
-        content = json.loads(response.content)
-        if int(content['result']['totalResults']) == 0: return False
-        return election_identifier if election_identifier.isnumeric() else content['result']['items'][0]['_about'].split('/')[-1]
+            content = await resp.json()
+            if int(content['result']['totalResults']) == 0: return False
+            return election_identifier if election_identifier.isnumeric() else content['result']['items'][0]['_about'].split('/')[-1]
 
-parliament = UKParliament('2019-12-12')
+parliament = UKParliament()
+start = time.time()
+asyncio.run(parliament.load('2019-12-12'))
+end = time.time()
+print(end - start)
+print(f'Members indexed: {len(parliament.members().get_members())}')

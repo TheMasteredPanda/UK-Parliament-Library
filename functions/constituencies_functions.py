@@ -1,6 +1,6 @@
 import utils
 import json
-import requests
+import aiohttp
 from structures.constituencies import Constituency
 from structures.elections import ElectionResult
 
@@ -11,7 +11,7 @@ class ConstituenciesFunctions():
         """
         self.constituencies: list[Constituency] = []
 
-    def _index(self, session: requests.Session, results: list[ElectionResult], use_list: bool = False):
+    async def _index(self, session: aiohttp.ClientSession, results: list[ElectionResult], use_list: bool = False):
         """
         Fetches all 650 currently active constituencies through the relevant endpoint or all the constituencies
         in the election results list, if stated.
@@ -24,25 +24,24 @@ class ConstituenciesFunctions():
         """
         self.constituencies.clear() # Empties 
 
-        def _index_from_list():
+        async def _index_from_list():
             for result_item in results:
-                response = requests.get(f'{utils.URL}/constituencies/{result_item.get_constituency_id()}')
-                content =  json.loads(response.content)
-                c_item = Constituency(content['result']['primaryTopic'])
-                c_item._set_election_result(result_item)
-                self.constituencies.append(c_item)
-
-
-        request = session.get(f'{utils.URL}/constituencies.json?_sort=endedDate&_pageSize=650')
-        if request.status_code != 200: raise Exception(f"Couldn't fetch used constituencies. Code: {request.status_code}")
-        c_results = json.loads(request.content)['result']['items']
-
-        for item in c_results: 
-            c_item = Constituency(item)
-            
-            for result_item in results:
-                if result_item._get_constituency_resource() == c_item._get_constituency_resource():
+                async with session.get(f'{utils.URL}/constituencies/{result_item.get_constituency_id()}') as resp:
+                    content = await resp.json()
+                    c_item = Constituency.create(content['result']['primaryTopic'])
                     c_item._set_election_result(result_item)
+                    self.constituencies.append(c_item)
+
+        async with session.get(f'{utils.URL}/constituencies.json?_sort=endedDate&_pageSize=650') as resp:
+            if resp.status != 200: raise Exception(f"Couldn't fetch used constituencies. Code: {request.status_code}")
+            content = await resp.json()
+            c_results = content['result']['items']
+            for item in c_results: 
+                c_item = Constituency(item)
+                
+                for result_item in results:
+                    if result_item._get_constituency_resource() == c_item._get_constituency_resource():
+                        c_item._set_election_result(result_item)
 
 
     def get_constituencies(self):

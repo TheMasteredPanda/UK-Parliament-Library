@@ -15,6 +15,10 @@ class Constituency():
         self.result = None
         self.established_date = constituency_json['startedDate']['_value']
 
+    @classmethod
+    def create(cls, constituency_json):
+        return cls(constituency_json)
+
     def get_type(self):
         return self.constituency_type
 

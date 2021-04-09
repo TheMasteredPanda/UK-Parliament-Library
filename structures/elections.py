@@ -1,9 +1,9 @@
-import requests
 import utils
+import aiohttp
 import json
 
 class ElectionResult():
-    def __init__(self, session: requests.Session, result_json):
+    def __init__(self, result_json, election_result_json):
         """
         Serialized the data relevant to this result. 
 
@@ -20,16 +20,19 @@ class ElectionResult():
         self.turnout = result_json['turnout']
         self.candidates = []
         self.election_label = result_json['election']['label']['_value']
-        response = requests.get(f'{utils.URL}/electionresults/{self.result_id}.json') # Gets the winner and the rest of the candidates. This includes candidate voting results and the order for the candidates from the winner to the least voted candidate.
-
-        if response.status_code != 200:
-            raise Exception(f"Couldn't fetch election results for result entry {self.result_id}/{result_json['constituency']['label']['_value']}")
-        content = json.loads(response.content)
-
-        for candidate in content['result']['primaryTopic']['candidate']:
+        for candidate in election_result_json['result']['primaryTopic']['candidate']:
             self.candidates.append({'name': candidate['fullName']['_value'], 'votes': candidate['numberOfVotes'], 'order': candidate['order'], 'party': candidate['party']['_value']})
 
         self.winner = list(filter(lambda c: c['order'] == 1, self.candidates))[0]
+
+    @classmethod
+    async def create(cls, session: aiohttp.ClientSession, result_json):
+        async with session.get(f'{utils.URL}/electionresults/{result_json["_about"].split("/")[-1]}.json') as resp: # Gets the winner and the rest of the candidates. This includes candidate voting results and the order for the candidates from the winner to the least voted candidate.
+
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch election results for result entry {result_json['_about']}/{result_json['constituency']['label']['_value']}")
+            content = await resp.json()
+            return cls(result_json, content)
 
     def get_election_label(self):
         return self.election_label
