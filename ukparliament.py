@@ -20,6 +20,19 @@ each instance can index data from one election onwards,
 until the date of the next election - this is to not
 index unnecessary data. 
 ---------------------------------------------------------
+
+
+TODO:
+    - Session Functions -   To get the dates of all Parliamentary sessions.
+                            Once we have those I can then sort the bills
+                            by session to get the bills laid after the 
+                            election date/id specified.
+    - Bills Functions  -    Using the session data I can index the bills
+                            relevant to the general election id/date in-
+                            putted.
+    - Commons Divisions Functions -
+                            To get data on the vote of the bill in a stage,
+                            hopefully I do not need to index this.
 '''
 
 class UKParliament():
@@ -78,6 +91,7 @@ class UKParliament():
         """
         async with aiohttp.ClientSession() as session: 
             election_id = await self._check_validity_of_identifier(session, election_identifer)
+            self.election_id = election_id
             results = await utils.load_data(f'{utils.URL}/electionresults.json?electionId={election_id}&_pageSize=100', session)
             tasks = []
 
@@ -114,10 +128,12 @@ class UKParliament():
             if int(content['result']['totalResults']) == 0: return False
             return election_identifier if election_identifier.isnumeric() else content['result']['items'][0]['_about'].split('/')[-1]
 
+    def get_election_id(self):
+        return self.election_id
+
 parliament = UKParliament()
 start = time.time()
 asyncio.run(parliament.load('2019-12-12'))
 end = time.time()
 print(end - start)
-for member in parliament.members().get_members():
-    print(member.get_full_name())
+print(parliament.get_election_id())

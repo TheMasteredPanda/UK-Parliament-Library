@@ -1,4 +1,7 @@
 
+from structures.constituencies import Constituency
+
+
 class PartyMember():
     def __init__(self, json_party_member):
         self.member_resource_url = json_party_member['_about']
@@ -27,7 +30,7 @@ class PartyMember():
     def get_party(self):
         return self.party
 
-    def get_constituency(self):
+    def get_constituency(self) -> Constituency:
         return self.constituency
 
     def _set_constituency(self, constituency):
@@ -36,11 +39,14 @@ class PartyMember():
     def get_twitter(self):
         return self.twitter
 
-class Party():
+    def _get_member_resource(self):
+        return self.member_resource_url
+
+class Party(): #TODO
     def __init__(self):
         pass
 
-class Chamber():
+class Chamber(): #TODO
     def __init__(self):
         pass
 

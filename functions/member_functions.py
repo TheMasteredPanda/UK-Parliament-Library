@@ -1,4 +1,6 @@
 import asyncio
+from typing import Union
+from structures.constituencies import Constituency
 from structures.elections import ElectionResult
 from structures.members import PartyMember, Party
 import aiohttp
@@ -28,5 +30,17 @@ class MemberFunctions():
 
         self.members.extend(await asyncio.gather(*tasks))
         
-    def get_members(self):
+    def get_members(self) -> list[PartyMember]:
         return self.members
+
+    def get_member_by_constituency(self, constitueny: Constituency) -> Union[PartyMember, None]:
+        for member in self.members:
+            if member.get_constitueny().get_constituency_id() == constitueny.get_constituency_id():
+                return member
+        return None
+
+    def get_member_by_name(self, name: str) -> Union[PartyMember, None]:
+        for member in self.members:
+            if member.get_full_name(False).startsWith(name):
+                return member
+        return None
