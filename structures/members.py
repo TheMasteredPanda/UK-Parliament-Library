@@ -14,27 +14,74 @@ class GoverningCapacity(BetterEnum):
             if option.value == value:
                 return value
         raise Exception(f'{value} was not associated with any of the enums')
-    
+
+class LatestElectionResult():
+    def __init__(self, json_object):
+        value_object = json_object['value']
+        self.result = value_object['result']
+        self.notional = value_object['isNotional']
+        self.electorate = value_object['electorate']
+        self.turnout = value_object['turnout']
+        self.majority = value_object['majority']
+        self.candidates = []
+
+        for candidate_object in value_object['candidates']:
+            candidate_name = candidate_object['name']
+            candidate_party_id = candidate_object['party']['id']
+            vote_share_change = candidate_object['resultChange']
+            candidate_order = candidate_object['rankOrder']
+            votes_received = candidate_object['votes']
+            vote_share = candidate_object['voteShare']
+
+    def get_result(self):
+        return self.result
+
+    def get_notional(self):
+        return self.notional
+
+    def get_electorate_size(self):
+        return self.electorate
+
+    def get_turnout(self):
+        return self.turnout
+
+    def get_majority(self):
+        return self.majority
+
+    def get_candidates(self):
+        return self.candidates
+        
 class PartyMember():
     def __init__(self, json_object):
-        self.member_id = json_object['value']['id']
-        self.titled_name = json_object['value']['nameFullTitle']
-        self.addressed_name = json_object['value']['nameAddressAs']
-        self.displayed_name = json_object['value']['nameDisplayAs']
-        self.listed_name = json_object['value']['nameListAs']
-        self._party_id = json_object['value']['latestParty']['id']
-        self.gender = json_object['value']['gender']
-        self.started = json_object['value']['latestHouseMembership']['membershipStartDate']
-        self.thumbnail = json_object['value']['thumbnailUrl']
-        self._house_id = json_object['value']['latestHouseMembership']['house']
-        self.membership_from = json_object['value']['latestHouseMembership']['membershipFrom']
-        self._membership_id = json_object['value']['latestHouseMembership']['membershipFromId']
+        value_object = json_object['value']
+        self.member_id = value_object['id']
+        self.titled_name = value_object['nameFullTitle']
+        self.addressed_name = value_object['nameAddressAs']
+        self.displayed_name = value_object['nameDisplayAs']
+        self.listed_name = value_object['nameListAs']
+        self._party_id = value_object['latestParty']['id']
+        self.gender = value_object['gender']
+        self.started = value_object['latestHouseMembership']['membershipStartDate']
+        self.thumbnail = value_object['thumbnailUrl']
+        self._house_id = value_object['latestHouseMembership']['house']
+        self.membership_from = value_object['latestHouseMembership']['membershipFrom']
+        self._membership_id = value_object['latestHouseMembership']['membershipFromId']
+        self.latest_election_result = None
+
+    def _set_latest_election_result(self, result: LatestElectionResult):
+        self.latest_election_result = result
 
     def _get_membership_from_id(self):
         return self._membership_id
 
+    def get_latest_election_result(self):
+        return self.latest_election_result
+
     def get_membership_from(self):
         return self.membership_from #If it is a Lord then this will show the Lords membership status (life, hereditary, &c). If this is a commons member this will show the constitueny the member is representing.
+
+    def is_mp(self):
+        return self._house_id != 2
 
     def _get_house(self):
         return self._house_id
@@ -65,17 +112,18 @@ class PartyMember():
 
 class Party():
     def __init__(self, json_object):
-        self.party_id = json_object['value']['id']
-        self.name  = json_object['value']['name']
-        self.abbreviation = json_object['value']['name']
-        self.primary_colour = json_object['value']['backgroundColour']
-        self.secondary_colour = json_object['value']['foregroundColour']
-        self.lords_govt_party = json_object['value']['isLordsMainParty']
+        value_object = json_object['value']
+        self.party_id = value_object['id']
+        self.name  = value_object['name']
+        self.abbreviation = value_object['name']
+        self.primary_colour = value_object['backgroundColour']
+        self.secondary_colour = value_object['foregroundColour']
+        self.lords_govt_party = value_object['isLordsMainParty']
         self.lords_party = self.lords_govt_party
-        self.lords_spiritual_party = json_object['value']['isLordsSpiritualParty']
-        self.governing = json_object['value']['governmentType'] is not None
-        self.governing_capacity = GoverningCapacity.from_value(json_object['value']['governmentType']) if json_object['value']['governmentType'] is not None else None
-        self.independent_group = json_object['value']['isIndependentParty']
+        self.lords_spiritual_party = value_object['isLordsSpiritualParty']
+        self.governing = value_object['governmentType'] is not None
+        self.governing_capacity = GoverningCapacity.from_value(value_object['governmentType']) if json_object['value']['governmentType'] is not None else None
+        self.independent_group = value_object['isIndependentParty']
         self.hoc_members = []
         self.hol_members = []
 
