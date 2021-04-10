@@ -1,31 +1,44 @@
 import json
+from enum import Enum
 import aiohttp
-URL = 'http://eldaddp.azurewebsites.net'
+
+class APIURLS(Enum):
+    MEMBERS = 'https://members-api.parliament.uk/api/'
+
+class BetterEnum(Enum):
+    @classmethod
+    def from_name(cls, name: str):
+        for option in cls:
+            if option.name.lower() == name.lower():
+                return option
 
 async def load_data(url: str, session: aiohttp.ClientSession):
     """
     Iterates through results that are pageinated and stiches all the results together.
 
     session: python modules Session instance for the UKParliament instance.
-    url: The URL of the first (page 0) page.
     """
 
-    async def iterate(url: str, results: list):
-        split_url = url.split('&')
-        if len(split_url) == 1: split_url = url.split('?')
-        page_size = list(filter(lambda k: '_pageSize=' in k, split_url))[0].split('=')[1]
-        async with aiohttp.ClientSession().get(url) if session is None else session.get(url) as resp:
+    async def iterate(url: str, results):
+        async with session.get(url) as resp:
             if resp.status != 200:
-                raise Exception(f"Couldn't continue to iterate over pages of data as {url} responded with error code {resp.status}")
+                raise Exception(f"Couldn't fetch data from url {url}: Status Code: {resp.status}")
             content = await resp.json()
-            if len(content['result']['items']) > 0: results.extend(content['result']['items'])
+            results.extend(content['items'])
 
-            if 'next' not in content['result']:
-                return results
-            else:
-                if page_size == -1:
-                    return await iterate(content['result']['next'], results)
-                else:
-                    return await iterate(f"{content['result']['next']}&_pageSize={page_size}", results)
+            for link_id in content['links']:
+                link = content['links'][link_id]
+                if link['rel'] == 'page.next':
+                    params = link.split('?')
+                    url_params = url.split('&')
+                    if len(url_params) == 1: 
+                        url_params = url.split('?')
+                        if len(url_params) == 1:
+                            return iterate(f'{url}?{params[1]}', results)
+                    modified_params = list(filter(lambda param: 'skip' not in param or 'take' not in param, url_params))
+                    modified_params.append(params.split('&'))
+                    return iterate(f'{url_params.pop(0)}?{"&".join(modified_params)}', results)
+            return results
 
+    
     return await iterate(url, [])
