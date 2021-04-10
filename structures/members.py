@@ -11,7 +11,7 @@ class GoverningCapacity(BetterEnum):
     @classmethod
     def from_value(cls, value: int):
         for option in cls:
-            if cls.value == value:
+            if option.value == value:
                 return value
         raise Exception(f'{value} was not associated with any of the enums')
     
@@ -26,8 +26,8 @@ class PartyMember():
         self.gender = json_object['value']['gender']
         self.started = json_object['value']['latestHouseMembership']['membershipStartDate']
         self.thumbnail = json_object['value']['thumbnailUrl']
-        self._house_id = json_object['value']['lastestHouseMembership']['house']
-        self.membership_from = json_object['value']['lastestHouseMembership']['membershipFrom']
+        self._house_id = json_object['value']['latestHouseMembership']['house']
+        self.membership_from = json_object['value']['latestHouseMembership']['membershipFrom']
         self._membership_id = json_object['value']['latestHouseMembership']['membershipFromId']
 
     def _get_membership_from_id(self):
@@ -74,13 +74,16 @@ class Party():
         self.lords_party = self.lords_govt_party
         self.lords_spiritual_party = json_object['value']['isLordsSpiritualParty']
         self.governing = json_object['value']['governmentType'] is not None
-        self.governing_capacity = GoverningCapacity.from_value(json_object['value']['governmentType'])
+        self.governing_capacity = GoverningCapacity.from_value(json_object['value']['governmentType']) if json_object['value']['governmentType'] is not None else None
         self.independent_group = json_object['value']['isIndependentParty']
-        self.members = {'hoc': [], 'hol': []}
+        self.hoc_members = []
+        self.hol_members = []
 
     def add_member(self, member: PartyMember):
-        if len(list(filter(lambda m: m._get_party_id() == member._get_party_id(), self.members['hoc'] if hoc is True else self.members['hol']))) > 0: return
-        self.members['hoc'].append(member) if member._get_party_id() == 1 else self.members['hol'].append(member)
+        if member._get_house() == 2:
+            self.hol_members.append(member)
+        else:
+            self.hoc_members.append(member)
     
     def _set_lords_party(self, lords_party: bool = True):
         self.lords_party = lords_party
@@ -92,15 +95,15 @@ class Party():
         return self.party_id
 
     def get_all_members(self) -> list[PartyMember]:
-        members = self.members['hoc']
-        members.extend(self.members['hol'])
+        members = self.hoc_members.copy()
+        members.extend(self.hol_members.copy())
         return members
 
     def get_mps(self) -> list[PartyMember]:
-        return self.members['hoc']
+        return self.hoc_members
 
     def get_lords(self) -> list[PartyMember]:
-        return self.members['hol']
+        return self.hol_members
 
     def find_member_by_name(self, name: str) -> Union[PartyMember, None]:
         for member in self.get_all_members():

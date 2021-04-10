@@ -31,7 +31,7 @@ class UKParliament():
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
-            async with session.get(f'{utils.APIURLS.MEMBERS}/Parties/GetActive/Commons') as resp:
+            async with session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Commons') as resp:
                 if resp.status != 200:
                     raise Exception("Couldn't fetch active parties in the House of Commons")
                 content = await resp.json()
@@ -39,7 +39,7 @@ class UKParliament():
                 for item in content['items']:
                     self.parties.append(Party(item))
 
-            async with session.get(f'{utils.APIURLS.MEMBERS}/Parties/GetActive/Lords') as resp:
+            async with session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Lords') as resp:
                 if resp.status != 200:
                     raise Exception("Couldn't fetch active parties in the House of Lords")
 
@@ -51,11 +51,16 @@ class UKParliament():
                         self.parties.append(Party(item))
                     else:
                         party._set_lords_party()
-            json_party_members = await utils.load_data(f'{utils.APIURLS.MEMBERS}/api/Members/Search?IsCurrentMember=true', session)
+            json_party_members = await utils.load_data(f'{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true', session)
 
+            print(len(json_party_members))
             for json_member in json_party_members:
                 member = PartyMember(json_member)
-                self.get_party_by_id(member._get_party_id()).add_member(member)
+                party = self.get_party_by_id(member._get_party_id())
+                if party is None:
+                    print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party under apparent id {member._get_party_id()}")
+                    continue
+                party.add_member(member)
                 
 
     def get_party_by_name(self, name: str) -> Union[Party, None]:
@@ -74,6 +79,7 @@ class UKParliament():
         members = []
 
         for party in self.parties:
+            print(f'Party {party.get_name()}/{party.get_party_id()} has {len(party.get_mps())} MPs')
             members.extend(party.get_mps())
 
         return members
@@ -82,9 +88,12 @@ class UKParliament():
         members = []
 
         for party in self.parties:
+            print(f'Party {party.get_name()}/{party.get_party_id()} has {len(party.get_lords())} Lords')
             members.extend(party.get_lords())
 
         return members
 
 parliament = UKParliament()
+asyncio.run(parliament.load())
 print(len(parliament.get_commons_members()))
+print(len(parliament.get_lords_members()))
