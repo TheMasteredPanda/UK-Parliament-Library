@@ -1,6 +1,8 @@
 from typing import Union
 from structures.members import Party, PartyMember, LatestElectionResult
 from structures.bills import BillType, Bill, BillStage
+import bills as bills_utils
+from bills import SearchBillsBuilder, SearchBillsSortOrder
 import utils
 import time
 import asyncio
@@ -147,32 +149,12 @@ class UKParliament():
                 return PartyMember(content)
 
 
-    async def search_bills_by_terms(self, query: str) -> list[Bill]:
+    async def search_bills(self, url: str) -> list[Bill]:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f'{utils.URL_BILLS}/Bills?SearchTerm={"%20".join(query.split(" "))}&SortOrder=DateUpdatedDescending') as resp:
+            async with session.get(url) as resp:
                 print(resp.url)
                 if resp.status != 200:
-                    raise Exception(f"Couldn't fetch bills with query: {query}. Status Code: {resp.status}")
-
-                async def search_bill_task(bill: Bill):
-                    async with session.get(f"{utils.URL_BILLS}/Bills/{bill.get_bill_id()}") as bill_resp:
-                        if bill_resp.status != 200:
-                            raise Exception(f"Couldn't fetch information for from url: '{bill_resp.url}'/{bill.get_title()}. Status Code: {bill_resp.status}")
-                        bill_content = await bill_resp.json()
-                        sponsors = bill_content['value']['sponsors']
-
-                        pm_sponsors = []
-                        bill._set_long_title(bill_content['value']['longTitle'])
-                        if sponsors is not None and len(sponsors) > 0:
-                            for json_sponsor in sponsors:
-                                member = self.get_member_by_id(json_sponsor['memberId'])
-                                if member is None:
-                                    member = await self._lazy_load_member(json_sponsor['memberId'])
-
-                                    if member is None:
-                                        raise Exception(f"Couldn't find sponsor party member instance of sponsor {json_sponsor['name']}/{json_sponsor['memberId']}")
-                                pm_sponsors.append(member)
-                            bill._set_sponsors(pm_sponsors)
+                    raise Exception(f"Couldn't fetch bills with url: {url}. Status Code: {resp.status}")
 
                 content = await resp.json()
                 bills = []
@@ -181,15 +163,17 @@ class UKParliament():
 
                 for item in content['items']:
                     bill = Bill(item)
-                    extra_bill_information_tasks.append(search_bill_task(bill))
+                    extra_bill_information_tasks.append(bills_utils._meta_bill_task(bill, self, session))
                     bills.append(bill)
                 await asyncio.gather(*extra_bill_information_tasks)
             
             return bills
 
+
+    
 parliament = UKParliament()
 asyncio.run(parliament.load())
 member = parliament.get_commons_members()[0]
-bills = asyncio.run(parliament.search_bills_by_terms('European Withdrawal'))
+bills = asyncio.run(parliament.search_bills(SearchBillsBuilder.builder().set_search_term('European Union').set_sort_order().build()))
 print(bills[0].get_sponsors()[0].get_display_name())
 

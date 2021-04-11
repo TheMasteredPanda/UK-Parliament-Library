@@ -14,6 +14,15 @@ class BetterEnum(Enum):
             if option.name.lower() == name.lower():
                 return option
 
+async def batch_process(tasks: list, batch_size: int = 50):
+    results = []
+    for i in range(math.ceil(len(tasks) / batch_size)):
+        start_index = batch_size * i
+        end_index = batch_size * (i + 1)
+        batch = tasks[start_index:end_index]
+        results.extend(await asyncio.gather(*batch))
+    return results
+
 async def load_data(url: str, session: aiohttp.ClientSession):
     """
     Iterates through results that are pageinated and stiches all the results together.
@@ -21,7 +30,6 @@ async def load_data(url: str, session: aiohttp.ClientSession):
     session: python modules Session instance for the UKParliament instance.
 
     """
-
 
     async with session.get(url) as resp:
         final_list = []
@@ -48,5 +56,5 @@ async def load_data(url: str, session: aiohttp.ClientSession):
             new_url = f"{url}{skipSegment}"
             tasks.append(task(f"{url}{f'{element}skip={page * 20}' if page != 0 else ''}"))
 
-        await asyncio.gather(*tasks)
+        await batch_process(tasks)
         return final_list
