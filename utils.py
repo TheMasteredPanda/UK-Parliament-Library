@@ -37,11 +37,16 @@ async def load_data(url: str, session: aiohttp.ClientSession):
         if resp.status != 200:
             raise Exception(f"Couldn't fetch data from {url}: Status Code: {resp.status}")
         content = await resp.json()
-        totalResults = content['totalResults']
+        totalResults = content['totalResults'] if 'totalResults' in content else content['totalItems'] if 'totalItems' in content else 0
         pages = math.ceil(totalResults / 20)
+        element = '&'
+        if '?' not in url:
+            element = '?'
 
         for page in range(pages):
-            tasks.append(task(f"{url}&skip={page * 20}"))
+            skipSegment = f"{element}skip={page * 20}"
+            new_url = f"{url}{skipSegment}"
+            tasks.append(task(f"{url}{f'{element}skip={page * 20}' if page != 0 else ''}"))
 
         await asyncio.gather(*tasks)
         return final_list

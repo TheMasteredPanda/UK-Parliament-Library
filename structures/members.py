@@ -1,4 +1,6 @@
 from enum import Enum
+import datetime
+import dateparser
 from typing import Union
 from utils import BetterEnum
 
@@ -33,22 +35,22 @@ class LatestElectionResult():
             votes_received = candidate_object['votes']
             vote_share = candidate_object['voteShare']
 
-    def get_result(self):
+    def get_result(self) -> str:
         return self.result
 
-    def get_notional(self):
+    def get_notional(self) -> bool:
         return self.notional
 
-    def get_electorate_size(self):
+    def get_electorate_size(self) -> int:
         return self.electorate
 
-    def get_turnout(self):
+    def get_turnout(self) -> int:
         return self.turnout
 
-    def get_majority(self):
+    def get_majority(self) -> int:
         return self.majority
 
-    def get_candidates(self):
+    def get_candidates(self) -> list[dict]:
         return self.candidates
         
 class PartyMember():
@@ -61,7 +63,7 @@ class PartyMember():
         self.listed_name = value_object['nameListAs']
         self._party_id = value_object['latestParty']['id']
         self.gender = value_object['gender']
-        self.started = value_object['latestHouseMembership']['membershipStartDate']
+        self.started = dateparser.parse(value_object['latestHouseMembership']['membershipStartDate'])
         self.thumbnail = value_object['thumbnailUrl']
         self._house_id = value_object['latestHouseMembership']['house']
         self.membership_from = value_object['latestHouseMembership']['membershipFrom']
@@ -71,43 +73,43 @@ class PartyMember():
     def _set_latest_election_result(self, result: LatestElectionResult):
         self.latest_election_result = result
 
-    def _get_membership_from_id(self):
+    def _get_membership_from_id(self) -> int:
         return self._membership_id
 
-    def get_latest_election_result(self):
+    def get_latest_election_result(self) -> Union[LatestElectionResult, None]:
         return self.latest_election_result
 
-    def get_membership_from(self):
+    def get_membership_from(self) -> str:
         return self.membership_from #If it is a Lord then this will show the Lords membership status (life, hereditary, &c). If this is a commons member this will show the constitueny the member is representing.
 
-    def is_mp(self):
+    def is_mp(self) -> bool:
         return self._house_id != 2
 
-    def _get_house(self):
+    def _get_house(self) -> int:
         return self._house_id
 
-    def get_id(self):
+    def get_id(self) -> int:
         return self.member_id
 
-    def get_titled_name(self):
+    def get_titled_name(self) -> str:
         return self.titled_name
 
-    def get_display_name(self):
+    def get_display_name(self) -> str:
         return self.displayed_name
     
-    def get_addressed_name(self):
+    def get_addressed_name(self) -> str:
         return self.addressed_name
 
-    def get_listed_name(self):
+    def get_listed_name(self) -> str:
         return self.listed_name
 
-    def _get_party_id(self):
+    def _get_party_id(self) -> int:
         return self._party_id
 
-    def get_gender(self):
+    def get_gender(self) -> str:
         return self.gender
 
-    def get_started_date(self):
+    def get_started_date(self) -> Union[datetime.datetime, None]:
         return self.started
 
 class Party():
@@ -136,10 +138,10 @@ class Party():
     def _set_lords_party(self, lords_party: bool = True):
         self.lords_party = lords_party
 
-    def get_name(self):
+    def get_name(self) -> str:
         return self.name
 
-    def get_party_id(self):
+    def get_party_id(self) -> int:
         return self.party_id
 
     def get_all_members(self) -> list[PartyMember]:
