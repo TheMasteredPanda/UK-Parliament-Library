@@ -128,7 +128,116 @@ class Bill:
     def get_current_stage(self) -> Union[BillStage, None]:
         return self.current_stage
 
-class Division:
+class LordsDivision:
+    def __init__(self, json_object):
+        self.division_id = json_object['divisionId']
+        self.date = dateparser.parse(json_object['date'])
+        self.division_number = json_object['number']
+        self.notes = json_object['notes']
+        self.title = json_object['title']
+        self.whipped = json_object['iswhipped']
+        self.gov_content = json_object['isGovernmentContent']
+        self.aye_votes = json_object['tellerContentCount']
+        self.no_votes = json_object['tellerNotContentCount']
+        self.sponsoring_member_id = json_object['sponsoringMemberId']
+        self._is_house = json_object['isHouse']
+        self.amendment_motion_notes = json_object['amendmentMotionNotes']
+        self.gov_won = json_object['isGovernmentWin']
+        self.remote_voting_start = dateparser.parse(json_object['remoteVotingStart'])
+        self.remote_voting_end = dateparser.parse(json_object['remoteVotingEnd'])
+        self._aye_teller_ids = list(map(lambda teller: teller['memberId'], json_object['contentTellers']))
+        self._no_teller_ids = list(map(lambda teller: teller['memberId'], json_object['notContentTellers']))
+        self._aye_member_ids = list(map(lambda lord: lord['memberId'], json_object['contents']))
+        self._no_member_ids = list(map(lambda lord: lord['memberId'], json_object['notContents']))
+        self.aye_tellers: list[PartyMember] = []
+        self.no_tellers: list[PartyMember] = []
+        self.aye_members: list[PartyMember] = []
+        self.no_members: list[PartyMember] = []
+        self.sponsoring_member: Union[PartyMember, None] = None
+
+    def get_id(self) -> int:
+        return self.division_id
+
+    def get_division_date(self) -> Union[datetime.datetime, None]:
+        return self.date
+
+    def get_notes(self):
+        return self.notes
+
+    def get_title(self):
+        return self.title
+
+    def was_whipped(self):
+        return self.whipped
+
+    def is_government_content(self):
+        return self.gov_content
+
+    def get_aye_count(self) -> int:
+        return self.aye_votes
+
+    def get_no_count(self) -> int:
+        return self.no_votes
+
+    def get_sponsoring_member(self) -> Union[PartyMember, None]:
+        return self.sponsoring_member
+
+    def get_is_house(self):
+        return self._is_house()
+
+    def did_government_win(self) -> bool:
+        return self.gov_won
+
+    def get_remote_voting_start_date(self) -> Union[datetime.datetime, None]:
+        return self.remote_voting_start
+
+    def get_remote_voting_end_date(self) -> Union[datetime.datetime, None]:
+        return self.remote_voting_end
+
+    def get_aye_tellers(self) -> list[PartyMember]:
+        return self.aye_tellers
+
+    def get_no_tellers(self) -> list[PartyMember]:
+        return self.no_tellers
+
+    def get_aye_members(self) -> list[PartyMember]:
+        return self.aye_votes
+
+    def get_no_members(self) -> list[PartyMember]:
+        return self.no_votes
+
+    def _get_aye_teller_ids(self) -> list[int]:
+        return self._aye_teller_ids
+
+    def _get_no_teller_ids(self) -> list[int]:
+        return self._no_teller_ids
+
+    def _get_no_vote_member_ids(self) -> list[int]:
+        return self._no_member_ids
+
+    def _get_aye_vote_member_ids(self) -> list[int]:
+        return self._aye_member_ids
+    
+    def _get_sponsoring_member_id(self) -> int:
+        return self.sponsoring_member_id
+
+    def _set_sponsoring_member(self, member: PartyMember):
+        self.sponsoring_member = member
+
+    def _set_aye_tellers(self, tellers: list[PartyMember]):
+        self.aye_tellers = tellers
+
+    def _set_no_tellers(self, tellers: list[PartyMember]):
+        self.no_tellers = tellers
+
+    def _set_aye_members(self, members: list[PartyMember]):
+        self.aye_members = members
+
+    def _set_no_members(self, members: list[PartyMember]):
+        self.no_members = members
+
+
+class CommonsDivision:
     def __init__(self, json_object):
         self.division_id = json_object['DivisionId']
         self.date = dateparser.parse(json_object['date'])
@@ -204,3 +313,5 @@ class Division:
 
     def get_didnt_vote_members(self) -> list[PartyMember]:
         return self.didnt_vote
+
+

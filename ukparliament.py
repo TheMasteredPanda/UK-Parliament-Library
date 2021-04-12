@@ -2,7 +2,7 @@ from threading import Lock
 from cachetools import TTLCache
 from typing import Union
 from structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
-from structures.bills import BillType, Bill, BillStage
+from structures.bills import BillType, Bill, BillStage, Division
 import bills as bills_utils
 from bills import SearchBillsBuilder, SearchBillsSortOrder
 import utils
@@ -200,7 +200,6 @@ class UKParliament:
                 self.bill_search_cache[url] = bills
             return bills
 
-
     async def get_commons_division(self, division_id: int):
         with self.division_cache_lock:
             cached_obj = self.division_cache.get(division_id)
@@ -213,8 +212,63 @@ class UKParliament:
                     raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
                 content = await resp.json()
 
+                division = Division(content)
 
+                with self.division_cache_lock:
+                    self.division_cache[division_id] = division
+                return division
     
+    async def get_lords_division(self, division_id: int):
+        with self.division_cache_lock:
+            cached_obj = self.division_cache.get(division_id)
+            if cached_obj is not None:
+                return cached_obj
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/{division_id}") as resp:
+                if resp.status != 200:
+                    raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
+                content = await resp.json()
+                division = Division(content)
+
+                with self.division_cache_lock:
+                    self.division_cache[division_id] = division
+                return division
+
+
+    async def search_for_lords_division(self, search_term: str):
+        async with aiohttp.ClientSession() as session:
+            formatted_search_term = "%20".join(search_term.split(' '))
+            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults?SearchTerm={formatted_search_term}") as resp:
+                if resp.status != 200:
+                    raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}. Status Code: {resp.status}")
+
+                total_seach_results = await resp.json()
+                division_items = await utils.load_data(f"{utils.URL_LORDS_VOTES}/Divisions/search?SearchTerm={formatted_search_term}", session, total_seach_results)
+
+                divisions = []
+                for item in division_items:
+                    division = Division(item)
+                    divisions.append(division)
+                return divisions
+
+    async def search_for_commons_divisions(self, search_term: str):
+        async with aiohttp.ClientSession() as session:
+            formatted_search_term = "%20".join(search_term.split(' '))
+            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults?queryParameters.searchTerm={formatted_search_term}") as resp:
+                if resp.status != 200:
+                    raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}'. Status Code: {resp.status}")
+                
+                total_search_results = await resp.json()
+                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search?queryParameters.searchTerm={formatted_search_term}", session, total_search_results)
+                
+                divisions = []
+                for item in division_items:
+                    division = Division(item) #TODO cache it.
+                    divisions.append(division)
+                return divisions
+
+
 parliament = UKParliament()
 asyncio.run(parliament.load())
 member = parliament.get_commons_members()[0]
