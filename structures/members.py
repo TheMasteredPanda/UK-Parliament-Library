@@ -1,8 +1,13 @@
+from threading import Lock
+from cachetools import TTLCache
 from enum import Enum
 import datetime
+import aiohttp
 import dateparser
 from typing import Union
-from utils import BetterEnum
+import utils
+from utils import BetterEnum, load_data
+
 
 class GoverningCapacity(BetterEnum):
     SINGLE_PARRTY_GOVERNMENT = 0
@@ -17,7 +22,31 @@ class GoverningCapacity(BetterEnum):
                 return value
         raise Exception(f'{value} was not associated with any of the enums')
 
-class LatestElectionResult():
+class VotingEntry:
+    def __init__(self, json_object):
+        value_object = json_object['value']
+        self.house = value_object['house']
+        self.voting_id = value_object['id']
+        self.vote = value_object['inAffirmativeLobby']
+        self.teller = value_object['actedAsTeller']
+        self.division_url = json_object['links'][0]['href']
+
+    def get_house(self):
+        return self.house
+
+    def get_id(self):
+        return self.voting_id
+
+    def voted_aye(self):
+        return self.voted_aye
+
+    def was_teller(self):
+        return self.teller
+
+    def get_division_id(self):
+        return self.division_url.split('/')[-1].replace('.json','')
+
+class LatestElectionResult:
     def __init__(self, json_object):
         value_object = json_object['value']
         self.result = value_object['result']
@@ -53,7 +82,7 @@ class LatestElectionResult():
     def get_candidates(self) -> list[dict]:
         return self.candidates
         
-class PartyMember():
+class PartyMember:
     def __init__(self, json_object):
         value_object = json_object['value']
         self.member_id = value_object['id']
@@ -112,7 +141,7 @@ class PartyMember():
     def get_started_date(self) -> Union[datetime.datetime, None]:
         return self.started
 
-class Party():
+class Party:
     def __init__(self, json_object):
         value_object = json_object['value']
         self.party_id = value_object['id']
@@ -163,4 +192,26 @@ class Party():
 
     def find_member_by_constituency_postcode(self, postcode: str) -> Union[PartyMember, None]:
         pass
+
+async def ler_task(ler_member: PartyMember, session: aiohttp.ClientSession):
+    async with session.get(f'{utils.URL_MEMBERS}/Members/{ler_member.get_id()}/LatestElectionResult') as ler_resp:
+        if ler_resp.status != 200:
+            return
+        
+        content = await ler_resp.json()
+        ler_member._set_latest_election_result(LatestElectionResult(content))
+
+async def vh_task(vi_member: PartyMember, session: aiohttp.ClientSession, cache: TTLCache, lock: Lock):
+    url = f'{utils.URL_MEMBERS}/Members/{vi_member.get_id()}/Voting?house={"Commons" if vi_member.is_mp() is True else "Lords"}'
+    items = await load_data(url, session)
+
+    voting_list = []
+
+    for item in items:
+        entry = VotingEntry(item)
+        voting_list.append(entry)
+
+    with lock:
+        cache[vi_member.get_id()] = voting_list
+
 

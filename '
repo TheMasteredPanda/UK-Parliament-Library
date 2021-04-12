@@ -1,7 +1,6 @@
-from threading import Lock
-from cachetools import TTLCache
+from cachetools import TTLCache, cached
 from typing import Union
-from structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
+from structures.members import Party, PartyMember, LatestElectionResult
 from structures.bills import BillType, Bill, BillStage
 import bills as bills_utils
 from bills import SearchBillsBuilder, SearchBillsSortOrder
@@ -27,19 +26,11 @@ index unnecessary data.
 ---------------------------------------------------------
 '''
 
-class UKParliament:
+class UKParliament():
     def __init__(self):
         self.parties: list[Party] = []
         self.bill_types: list[BillType] = []
         self.bill_stages: list[BillStage] = []
-        self.old_member_cache = TTLCache(maxsize=90, ttl=600)
-        self.old_member_cache_lock = Lock()
-        self.bill_search_cache = TTLCache(maxsize=90, ttl=180)
-        self.bill_search_cache_lock = Lock()
-        self.division_cache = TTLCache(maxsize=90, ttl=600)
-        self.division_cache_lock = Lock()
-        self.voting_history_cache = TTLCache(maxsize=90, ttl=3600)
-        self.voting_history_lock = Lock()
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
@@ -73,10 +64,20 @@ class UKParliament:
                     continue
                 party.add_member(member)
 
+            async def ler_task(ler_member: PartyMember):
+                async with session.get(f'{utils.URL_MEMBERS}/Members/{ler_member.get_id()}/LatestElectionResult') as ler_resp:
+                    if ler_resp.status != 200:
+                        return
+                    
+                    content = await ler_resp.json()
+                    ler_member._set_latest_election_result(LatestElectionResult(content))
+
+
             ler_tasks = []
 
             for m in self.get_commons_members():
-                ler_tasks.append(ler_task(m, session))
+                ler_tasks.append(ler_task(m))
+
 
             
             await asyncio.gather(*ler_tasks)
@@ -95,18 +96,6 @@ class UKParliament:
             for json_bill_stage in json_bill_stages:
                 self.bill_stages.append(BillStage(json_bill_stage))
 
-
-
-    async def get_voting_history(self, member: PartyMember) -> list[VotingEntry]:
-        with self.voting_history_lock:
-            cached_obj = self.voting_history_cache.get(member.get_id())
-            if cached_obj is not None:
-                return cached_obj
-
-        async with aiohttp.ClientSession() as session:
-            await asyncio.gather(vh_task(member, session, self.voting_history_cache, self.voting_history_lock))
-
-        return await self.get_voting_history(member)
 
     def get_party_by_name(self, name: str) -> Union[Party, None]:
         for party in self.parties:
@@ -152,21 +141,14 @@ class UKParliament:
         return None
 
     #Cheap Workaround to using a cache, something I'll implement later
+    @cached(cache=TTLCache(maxsize=30, ttl=120))
     async def _lazy_load_member(self, member_id: int) -> PartyMember:
-        with self.old_member_cache_lock:
-            cached_obj = self.old_member_cache.get(member_id)
-            if cached_obj is not None:
-                return cached_obj
-
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{utils.URL_MEMBERS}/Members/{member_id}") as resp:
                 if resp.status != 200:
                     raise Exception(f"Couldn't lazily load member under id {member_id}. Status Code: {resp.status}.")
                 content = await resp.json()
-                member = PartyMember(content)
-                with self.old_member_cache_lock:
-                    self.old_member_cache[member_id] = member
-                return member
+                return PartyMember(content)
 
     def get_bill_stages(self):
         return self.bill_stages
@@ -174,14 +156,11 @@ class UKParliament:
     def get_bill_types(self):
         return self.bill_types
 
+    @cached(cache=TTLCache(maxsize=100, ttl=120))
     async def search_bills(self, url: str) -> list[Bill]:
-        with self.bill_search_cache_lock:
-            cached_obj = self.bill_search_cache.get(url)
-            if cached_obj is not None:
-                return cached_obj
-
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
+                print(resp.url)
                 if resp.status != 200:
                     raise Exception(f"Couldn't fetch bills with url: {url}. Status Code: {resp.status}")
 
@@ -196,27 +175,18 @@ class UKParliament:
                     bills.append(bill)
                 await asyncio.gather(*extra_bill_information_tasks)
             
-            with self.bill_search_cache_lock:
-                self.bill_search_cache[url] = bills
             return bills
-
-
-    async def get_commons_division(self, division_id: int):
-        with self.division_cache_lock:
-            cached_obj = self.division_cache.get(division_id)
-            if cached_obj is not None:
-                return cached_obj
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}") as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
-                content = await resp.json()
 
 
     
 parliament = UKParliament()
 asyncio.run(parliament.load())
 member = parliament.get_commons_members()[0]
-print(f"Getting voting history of: {member.get_display_name()}/{member.get_id()}...")
-print(len(asyncio.run(parliament.get_voting_history(member))))
+start_time_one = time.time()
+bills = asyncio.run(parliament.search_bills(SearchBillsBuilder.builder().set_search_term('European Union').set_sort_order().build()))
+end_time_one = time.time()
+start_time_two = time.time()
+bills = asyncio.run(parliament.search_bills(SearchBillsBuilder.builder().set_search_term('European Union').set_sort_order().build()))
+end_time_two = time.time()
+print(f"First fetch: {end_time_one - start_time_one}. Second fetch: {end_time_two - end_time_one}.")
+print(member.get_display_name())

@@ -3,7 +3,7 @@ from typing import Union
 import dateparser
 from structures.members import PartyMember
 
-class BillStage():
+class BillStage:
     def __init__(self, json_object):
         self.stage_id = json_object['id']
         self.name = json_object['name']
@@ -30,7 +30,7 @@ class BillStage():
     def get_house(self):
         return self.house
 
-class BillType():
+class BillType:
     def __init__(self, json_object):
         self.bill_type_id = json_object['id']
         self.category = json_object['category']
@@ -53,7 +53,7 @@ class BillType():
     def get_order(self) -> int:
         return self.order
 
-class Bill():
+class Bill:
     def __init__(self, json_object):
         value_object = json_object['value']
         self.bill_id = value_object['billID']
@@ -128,4 +128,79 @@ class Bill():
     def get_current_stage(self) -> Union[BillStage, None]:
         return self.current_stage
 
+class Division:
+    def __init__(self, json_object):
+        self.division_id = json_object['DivisionId']
+        self.date = dateparser.parse(json_object['date'])
+        self.publiciation_uploaded = dateparser.parse(json_object['PublicationUpdated'])
+        self.number = json_object['Number']
+        self.deferred = json_object['IsDeferred']
+        self.evel_type = json_object['EVELType']
+        self.evel_country = json_object['EVELCountry']
+        self.title = json_object['Title']
+        self.aye_count = json_object['AyeCount']
+        self.no_count = json_object['NoCount']
+        self.double_majority_aye_count = json_object['DoubleMajorityAyeCount']
+        self.double_majority_no_count = json_object['DoubleMajorityNoCount']
+        self._aye_teller_ids = map(lambda teller_object: teller_object['MemberId'], json_object['AyeTellers'])
+        self._no_teller_ids = map(lambda teller_object: teller_object['MemberId'], json_object['NoTellers'])
+        self._aye_ids = map(lambda mp: mp['MemberId'], json_object['Ayes'])
+        self._no_ids = map(lambda mp: mp['MemberId'], json_object['Noes'])
+        self._no_vote_ids = map(lambda mp: mp['MemberId'], json_object['NoVoteRecorded'])
+        self.ayes_members: list[PartyMember] = []
+        self.noes_members: list[PartyMember] = []
+        self.didnt_vote: list[PartyMember] = []
 
+    def get_id(self) -> int:
+        return self.division_id
+
+    def get_date(self) -> Union[datetime.datetime, None]:
+        return self.date
+
+    def get_publication_uploaded_date(self) -> Union[datetime.datetime, None]:
+        return self.publiciation_uploaded
+
+    def get_division_number(self) -> int:
+        return self.number
+
+    def was_deferred(self) -> bool:
+        return self.deferred
+
+    def get_evel_type(self):
+        return self.evel_type
+
+    def get_evel_country(self):
+        return self.evel_country
+
+    def get_division_title(self) -> str:
+        return self.title
+
+    def ayes(self) -> int:
+        return self.aye_count
+
+    def noes(self) -> int:
+        return self.no_count
+
+    def supermajority_ayes(self) -> int:
+        return self.double_majority_aye_count
+
+    def supermajority_noes(self) -> int:
+        return self.double_majority_no_count
+
+    def _set_ayes_members(self, members: list[PartyMember]):
+        self.ayes_members = members
+   
+    def _set_noes_members(self, members: list[PartyMember]):
+        self.noes_members = members
+
+    def _set_didnt_vote_members(self, members: list[PartyMember]):
+        self.didnt_vote = members
+
+    def get_aye_members(self) -> list[PartyMember]:
+        return self.ayes_members
+
+    def get_no_members(self) -> list[PartyMember]:
+        return self.noes_members
+
+    def get_didnt_vote_members(self) -> list[PartyMember]:
+        return self.didnt_vote
