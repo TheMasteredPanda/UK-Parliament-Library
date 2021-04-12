@@ -252,8 +252,8 @@ class CommonsDivision:
         self.no_count = json_object['NoCount']
         self.double_majority_aye_count = json_object['DoubleMajorityAyeCount']
         self.double_majority_no_count = json_object['DoubleMajorityNoCount']
-        self._aye_teller_ids = list(map(lambda teller_object: teller_object['MemberId'], json_object['AyeTellers']))
-        self._no_teller_ids = list(map(lambda teller_object: teller_object['MemberId'], json_object['NoTellers']))
+        self._aye_teller_ids = [] if json_object['AyeTellers'] is None else list(map(lambda teller_object: teller_object['MemberId'], json_object['AyeTellers']))
+        self._no_teller_ids = [] if json_object['NoTellers'] is None else list(map(lambda teller_object: teller_object['MemberId'], json_object['NoTellers']))
         self._aye_ids = list(map(lambda mp: mp['MemberId'], json_object['Ayes']))
         self._no_ids = list(map(lambda mp: mp['MemberId'], json_object['Noes']))
         self._no_vote_ids = list(map(lambda mp: mp['MemberId'], json_object['NoVoteRecorded']))

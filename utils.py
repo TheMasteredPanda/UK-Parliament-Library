@@ -16,15 +16,6 @@ class BetterEnum(Enum):
             if option.name.lower() == name.lower():
                 return option
 
-async def batch_process(tasks: list, batch_size: int = 50):
-    results = []
-    for i in range(math.ceil(len(tasks) / batch_size)):
-        start_index = batch_size * i
-        end_index = batch_size * (i + 1)
-        batch = tasks[start_index:end_index]
-        results.extend(await asyncio.gather(*batch))
-    return results
-
 async def load_data(url: str, session: aiohttp.ClientSession, total_search_results = -1):
     """
     Iterates through results that are pageinated and stiches all the results together.
@@ -49,7 +40,7 @@ async def load_data(url: str, session: aiohttp.ClientSession, total_search_resul
             raise Exception(f"Couldn't fetch data from {url}: Status Code: {resp.status}")
         content = await resp.json()
         total_results = content['totalResults'] if 'totalResults' in content else content['totalItems'] if 'totalItems' in content else 0
-        if total_search_results != -1: totalResults = total_search_results
+        if total_search_results != -1: total_results = total_search_results
         pages = math.ceil(total_results / 20)
         element = '&'
         if '?' not in url:
@@ -59,5 +50,5 @@ async def load_data(url: str, session: aiohttp.ClientSession, total_search_resul
             skipSegment = f"{element}skip={page * 20}&take=20" if url.startswith(URL_COMMONS_VOTES) is False else f"{element}queryParameters.skip={page * 20}&queryParameters.take=20"
             tasks.append(task(f"{url}{skipSegment if page != 0 else ''}"))
 
-        await batch_process(tasks)
+        await asyncio.gather(*tasks)
         return final_list
