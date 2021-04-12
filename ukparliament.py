@@ -2,7 +2,7 @@ from threading import Lock
 from cachetools import TTLCache
 from typing import Union
 from structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
-from structures.bills import BillType, Bill, BillStage, Division
+from structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision, division_task
 import bills as bills_utils
 from bills import SearchBillsBuilder, SearchBillsSortOrder
 import utils
@@ -207,12 +207,14 @@ class UKParliament:
                 return cached_obj
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}") as resp:
+            async with session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}.json") as resp:
                 if resp.status != 200:
+                    print(resp.url)
                     raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
                 content = await resp.json()
 
-                division = Division(content)
+                division = CommonsDivision(content)
+                await self._populate_commons_division(division)
 
                 with self.division_cache_lock:
                     self.division_cache[division_id] = division
@@ -229,8 +231,8 @@ class UKParliament:
                 if resp.status != 200:
                     raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
                 content = await resp.json()
-                division = Division(content)
-
+                division = LordsDivision(content)
+                await self._populate_lords_division(division)
                 with self.division_cache_lock:
                     self.division_cache[division_id] = division
                 return division
@@ -247,9 +249,13 @@ class UKParliament:
                 division_items = await utils.load_data(f"{utils.URL_LORDS_VOTES}/Divisions/search?SearchTerm={formatted_search_term}", session, total_seach_results)
 
                 divisions = []
+
+
                 for item in division_items:
-                    division = Division(item)
+                    division = LordsDivision(item)
+                    await self._populate_lords_division(division)
                     divisions.append(division)
+
                 return divisions
 
     async def search_for_commons_divisions(self, search_term: str):
@@ -264,13 +270,57 @@ class UKParliament:
                 
                 divisions = []
                 for item in division_items:
-                    division = Division(item) #TODO cache it.
+                    division = CommonsDivision(item) #TODO cache it.
+                    await self._populate_commons_division(division)
                     divisions.append(division)
                 return divisions
+
+
+    async def _populate_lords_division(self, division: LordsDivision):
+        aye_tellers = []
+        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers), division._get_aye_teller_ids()))
+        await asyncio.gather(*a_teller_tasks)
+        division._set_aye_tellers(aye_tellers)
+        no_tellers = []
+        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers), division._get_no_teller_ids()))
+        await asyncio.gather(*n_teller_tasks)
+        division._set_no_tellers(no_tellers)
+        no_members = []
+        n_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members), division._get_no_vote_member_ids()))
+        await utils.batch_process(n_members_tasks)
+        division._set_no_members(no_members)
+
+        aye_members = []
+        a_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members), division._get_aye_vote_member_ids()))
+        await utils.batch_process(a_members_tasks)
+        division._set_aye_members(aye_members)
+
+
+    async def _populate_commons_division(self, division: CommonsDivision):
+        aye_tellers = []
+        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers), division._get_aye_teller_ids()))
+        await asyncio.gather(*a_teller_tasks)
+        division._set_aye_members(aye_tellers)
+
+        no_tellers = []
+        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers), division._get_no_teller_ids()))
+        await asyncio.gather(*n_teller_tasks)
+        
+        aye_members = []
+        aye_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members), division._get_aye_member_ids()))
+        await utils.batch_process(aye_members_tasks)
+        division._set_aye_members(aye_members)
+
+        no_members = []
+        no_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members), division._get_no_member_ids()))
+        await utils.batch_process(no_members_tasks)
+        division._set_no_members(no_members)
+
+
 
 
 parliament = UKParliament()
 asyncio.run(parliament.load())
 member = parliament.get_commons_members()[0]
-print(f"Getting voting history of: {member.get_display_name()}/{member.get_id()}...")
-print(len(asyncio.run(parliament.get_voting_history(member))))
+results = asyncio.run(parliament.search_for_commons_divisions('Exiting the European Union'))
+print(len(results))

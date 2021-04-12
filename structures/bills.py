@@ -1,3 +1,4 @@
+import json
 import datetime
 from typing import Union
 import dateparser
@@ -135,7 +136,7 @@ class LordsDivision:
         self.division_number = json_object['number']
         self.notes = json_object['notes']
         self.title = json_object['title']
-        self.whipped = json_object['iswhipped']
+        self.whipped = json_object['isWhipped']
         self.gov_content = json_object['isGovernmentContent']
         self.aye_votes = json_object['tellerContentCount']
         self.no_votes = json_object['tellerNotContentCount']
@@ -164,7 +165,7 @@ class LordsDivision:
     def get_notes(self):
         return self.notes
 
-    def get_title(self):
+    def get_division_title(self):
         return self.title
 
     def was_whipped(self):
@@ -201,10 +202,10 @@ class LordsDivision:
         return self.no_tellers
 
     def get_aye_members(self) -> list[PartyMember]:
-        return self.aye_votes
+        return self.aye_members
 
     def get_no_members(self) -> list[PartyMember]:
-        return self.no_votes
+        return self.no_members
 
     def _get_aye_teller_ids(self) -> list[int]:
         return self._aye_teller_ids
@@ -240,7 +241,7 @@ class LordsDivision:
 class CommonsDivision:
     def __init__(self, json_object):
         self.division_id = json_object['DivisionId']
-        self.date = dateparser.parse(json_object['date'])
+        self.date = dateparser.parse(json_object['Date'])
         self.publiciation_uploaded = dateparser.parse(json_object['PublicationUpdated'])
         self.number = json_object['Number']
         self.deferred = json_object['IsDeferred']
@@ -251,19 +252,21 @@ class CommonsDivision:
         self.no_count = json_object['NoCount']
         self.double_majority_aye_count = json_object['DoubleMajorityAyeCount']
         self.double_majority_no_count = json_object['DoubleMajorityNoCount']
-        self._aye_teller_ids = map(lambda teller_object: teller_object['MemberId'], json_object['AyeTellers'])
-        self._no_teller_ids = map(lambda teller_object: teller_object['MemberId'], json_object['NoTellers'])
-        self._aye_ids = map(lambda mp: mp['MemberId'], json_object['Ayes'])
-        self._no_ids = map(lambda mp: mp['MemberId'], json_object['Noes'])
-        self._no_vote_ids = map(lambda mp: mp['MemberId'], json_object['NoVoteRecorded'])
+        self._aye_teller_ids = list(map(lambda teller_object: teller_object['MemberId'], json_object['AyeTellers']))
+        self._no_teller_ids = list(map(lambda teller_object: teller_object['MemberId'], json_object['NoTellers']))
+        self._aye_ids = list(map(lambda mp: mp['MemberId'], json_object['Ayes']))
+        self._no_ids = list(map(lambda mp: mp['MemberId'], json_object['Noes']))
+        self._no_vote_ids = list(map(lambda mp: mp['MemberId'], json_object['NoVoteRecorded']))
         self.ayes_members: list[PartyMember] = []
         self.noes_members: list[PartyMember] = []
         self.didnt_vote: list[PartyMember] = []
+        self.aye_tellers: list[PartyMember] = []
+        self.no_tellers: list[PartyMember] = []
 
     def get_id(self) -> int:
         return self.division_id
 
-    def get_date(self) -> Union[datetime.datetime, None]:
+    def get_division_date(self) -> Union[datetime.datetime, None]:
         return self.date
 
     def get_publication_uploaded_date(self) -> Union[datetime.datetime, None]:
@@ -296,14 +299,35 @@ class CommonsDivision:
     def supermajority_noes(self) -> int:
         return self.double_majority_no_count
 
-    def _set_ayes_members(self, members: list[PartyMember]):
+    def _set_aye_members(self, members: list[PartyMember]):
         self.ayes_members = members
    
-    def _set_noes_members(self, members: list[PartyMember]):
+    def _set_no_members(self, members: list[PartyMember]):
         self.noes_members = members
 
     def _set_didnt_vote_members(self, members: list[PartyMember]):
         self.didnt_vote = members
+
+    def _set_aye_tellers(self, members: list[PartyMember]):
+        self.aye_tellers = members
+
+    def _set_no_tellers(self, members: list[PartyMember]):
+        self.no_tellers = members
+
+    def _get_aye_member_ids(self) -> list[int]:
+        return self._aye_ids
+
+    def _get_no_member_ids(self) -> list[int]:
+        return self._no_ids
+
+    def _get_didnt_vote_member_ids(self) -> list[int]:
+        return self._no_vote_ids
+
+    def _get_no_teller_ids(self) -> list[int]:
+        return self._no_teller_ids
+
+    def _get_aye_teller_ids(self) -> list[int]:
+        return self._aye_teller_ids
 
     def get_aye_members(self) -> list[PartyMember]:
         return self.ayes_members
@@ -314,4 +338,9 @@ class CommonsDivision:
     def get_didnt_vote_members(self) -> list[PartyMember]:
         return self.didnt_vote
 
-
+async def division_task(instance, m_id, member_list: list[PartyMember]):
+    member = instance.get_member_by_id(m_id)
+    if member is None: member = await instance._lazy_load_member(m_id)
+    if member is None:
+        raise Exception(f"Couldn't find member {m_id}")
+    member_list.append(member)

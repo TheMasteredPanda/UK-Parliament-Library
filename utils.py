@@ -4,8 +4,8 @@ import json
 from enum import Enum
 import aiohttp
 
-URL_COMMONS_VOTES = 'https://commoonsvotes-api.parliament.uk/data'
-URL_LORDS_VOTES = ''
+URL_COMMONS_VOTES = 'https://commonsvotes-api.parliament.uk/data'
+URL_LORDS_VOTES = 'https://lordsvotes-api.parliament.uk/data'
 URL_MEMBERS = 'https://members-api.parliament.uk/api'
 URL_BILLS = 'https://bills-api.parliament.uk/api'
 
