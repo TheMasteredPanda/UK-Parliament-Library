@@ -12,10 +12,6 @@ import json
 import utils
 import aiohttp
 
-__author__ = 'TheMasteredPanda'
-__status__ = 'Development'
-__version__ = '1.0'
-
 '''
 ---------------------------------------------------------
 A Python Interface for the UK Parliament Rest API. 
@@ -40,6 +36,10 @@ class UKParliament:
         self.division_cache_lock = Lock()
         self.voting_history_cache = TTLCache(maxsize=90, ttl=3600)
         self.voting_history_lock = Lock()
+        self.division_search_commons_lock = Lock()
+        self.division_search_commons_cache = TTLCache(maxsize=90, ttl=300)
+        self.division_search_lords_lock = Lock()
+        self.division_search_lords_cache = TTLCache(maxsize=90, ttl=300)
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
@@ -209,7 +209,6 @@ class UKParliament:
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}.json") as resp:
                 if resp.status != 200:
-                    print(resp.url)
                     raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
                 content = await resp.json()
 
@@ -239,6 +238,11 @@ class UKParliament:
 
 
     async def search_for_lords_division(self, search_term: str) -> list[LordsDivision]:
+        with self.division_search_lords_lock:
+            cached_obj = self.division_search_lords_cache.get(search_term.lower())
+            if cached_obj is not None:
+                return cached_obj
+
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
             async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults?SearchTerm={formatted_search_term}") as resp:
@@ -256,9 +260,18 @@ class UKParliament:
                     await self._populate_lords_division(division)
                     divisions.append(division)
 
+
+                with self.division_search_lords_lock:
+                    self.division_search_lords_cache[search_term.lower()] = divisions
                 return divisions
 
     async def search_for_commons_divisions(self, search_term: str) -> list[CommonsDivision]:
+        with self.division_search_commons_lock:
+            cached_obj = self.division_search_commons_cache.get(search_term.lower())
+            if cached_obj is not None:
+                return cached_obj
+
+
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
             async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults?queryParameters.searchTerm={formatted_search_term}") as resp:
@@ -269,9 +282,12 @@ class UKParliament:
                 division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search?queryParameters.searchTerm={formatted_search_term}", session, total_search_results)
                 divisions = []
                 for item in division_items:
-                    division = CommonsDivision(item) #TODO cache it.
+                    division = CommonsDivision(item) 
                     await self._populate_commons_division(division)
                     divisions.append(division)
+
+                with self.division_search_commons_lock:
+                    self.division_search_commons_cache[search_term.lower()] = divisions
                 return divisions
 
 
