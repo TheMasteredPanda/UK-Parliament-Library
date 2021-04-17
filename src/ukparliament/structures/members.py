@@ -5,8 +5,8 @@ import datetime
 import aiohttp
 import dateparser
 from typing import Union
-import utils
-from utils import BetterEnum, load_data
+from .. import utils
+from ..utils import BetterEnum, load_data
 
 
 class GoverningCapacity(BetterEnum):
@@ -184,14 +184,17 @@ class Party:
     def get_lords(self) -> list[PartyMember]:
         return self.hol_members
 
+    def get_primary_party_colour(self):
+        return self.primary_colour
+
+    def get_secondary_party_colour(self):
+        return self.secondary_colour
+
     def find_member_by_name(self, name: str) -> Union[PartyMember, None]:
         for member in self.get_all_members():
             if name in member.get_display_name() or name in member.get_titled_name() or name in member.get_addressed_name():
                 return member
         return None
-
-    def find_member_by_constituency_postcode(self, postcode: str) -> Union[PartyMember, None]:
-        pass
 
 async def ler_task(ler_member: PartyMember, session: aiohttp.ClientSession):
     async with session.get(f'{utils.URL_MEMBERS}/Members/{ler_member.get_id()}/LatestElectionResult') as ler_resp:

@@ -1,15 +1,16 @@
 from threading import Lock
+from aiohttp.client import ClientSession
 from cachetools import TTLCache
 from typing import Union
-from structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
-from structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision, division_task
-import bills as bills_utils
-from bills import SearchBillsBuilder, SearchBillsSortOrder
-import utils
+from .structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
+from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
+from . import bills
+from .bills import _meta_bill_task
+from . import utils
+from .bills import division_task
 import time
 import asyncio
 import json
-import utils
 import aiohttp
 
 '''
@@ -40,6 +41,8 @@ class UKParliament:
         self.division_search_commons_cache = TTLCache(maxsize=90, ttl=300)
         self.division_search_lords_lock = Lock()
         self.division_search_lords_cache = TTLCache(maxsize=90, ttl=300)
+        self.bills_cache = TTLCache(maxsize=30, ttl=300)
+        self.bills_cache_lock = Lock()
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
@@ -174,6 +177,24 @@ class UKParliament:
     def get_bill_types(self):
         return self.bill_types
 
+    async def get_bill(self, bill_id: int) -> Bill:
+        with self.bills_cache_lock:
+            cached_obj = self.bills_cache.get(bill_id)
+            if cached_obj is not None:
+                return cached_obj
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{utils.URL_BILLS}/Bills/{bill_id}") as resp:
+                if resp.status != 200:
+                    raise Exception(f"Failed to fetch bill under id {bill_id}")
+                content =  await resp.json()
+                bill = Bill(content)
+                await _meta_bill_task(bill, self, session)
+
+                with self.bills_cache_lock:
+                    self.bills_cache[bill_id] = bill
+                return bill
+
     async def search_bills(self, url: str) -> list[Bill]:
         with self.bill_search_cache_lock:
             cached_obj = self.bill_search_cache.get(url)
@@ -192,7 +213,7 @@ class UKParliament:
 
                 for item in content['items']:
                     bill = Bill(item)
-                    extra_bill_information_tasks.append(bills_utils._meta_bill_task(bill, self, session))
+                    extra_bill_information_tasks.append(_meta_bill_task(bill, self, session))
                     bills.append(bill)
                 await asyncio.gather(*extra_bill_information_tasks)
             
@@ -254,12 +275,10 @@ class UKParliament:
 
                 divisions = []
 
-
                 for item in division_items:
                     division = LordsDivision(item)
                     await self._populate_lords_division(division)
                     divisions.append(division)
-
 
                 with self.division_search_lords_lock:
                     self.division_search_lords_cache[search_term.lower()] = divisions

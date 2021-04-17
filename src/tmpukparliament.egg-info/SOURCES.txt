@@ -1,0 +1,6 @@
+README.md
+setup.py
+src/tmpukparliament.egg-info/PKG-INFO
+src/tmpukparliament.egg-info/SOURCES.txt
+src/tmpukparliament.egg-info/dependency_links.txt
+src/tmpukparliament.egg-info/top_level.txt

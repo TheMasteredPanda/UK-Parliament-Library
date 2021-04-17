@@ -2,7 +2,7 @@ import json
 import datetime
 from typing import Union
 import dateparser
-from structures.members import PartyMember
+from ..structures.members import PartyMember
 
 class BillStage:
     def __init__(self, json_object):
@@ -66,7 +66,7 @@ class Bill:
         self.withdrawn = value_object['billWithdrawn'] if value_object['billWithdrawn'] is not None else False
         self._bill_type_id = value_object['billType']['id']
         self.sessions = value_object['sessions']
-        self.curent_stage_id = value_object['currentStage']['stageId']
+        self._current_stage_id = value_object['currentStage']['stageId']
         self.current_stage_sitting = value_object['currentStage']['stageSitting']
         self.current_stage = None
         self.royal_assent = value_object['hasRoyalAssent']
@@ -74,6 +74,10 @@ class Bill:
         self.bill_type = None
         self.sponsors: list[PartyMember] = []
         self.long_title = None
+        self.date_introduced = dateparser.parse(value_object['currentBillDocument']['date'])
+
+    def get_date_introduced(self) -> Union[datetime.datetime, None]:
+        return self.date_introduced
 
     def _set_long_title(self, long_title: str):
         self.long_title = long_title
@@ -123,6 +127,9 @@ class Bill:
     def get_sessions_accomodated(self) -> list:
         return self.sessions
 
+    def _get_current_stage_id(self):
+        return self._current_stage_id
+    
     def _set_current_stage(self, current_stage):
         self.current_stage = current_stage
 
@@ -144,8 +151,8 @@ class LordsDivision:
         self._is_house = json_object['isHouse']
         self.amendment_motion_notes = json_object['amendmentMotionNotes']
         self.gov_won = json_object['isGovernmentWin']
-        self.remote_voting_start = dateparser.parse(json_object['remoteVotingStart'])
-        self.remote_voting_end = dateparser.parse(json_object['remoteVotingEnd'])
+        self.remote_voting_start = dateparser.parse(json_object['remoteVotingStart']) if json_object['remoteVotingStart'] is not None else None
+        self.remote_voting_end = dateparser.parse(json_object['remoteVotingEnd']) if json_object['remoteVotingEnd'] is not None else None
         self._aye_teller_ids = list(map(lambda teller: teller['memberId'], json_object['contentTellers']))
         self._no_teller_ids = list(map(lambda teller: teller['memberId'], json_object['notContentTellers']))
         self._aye_member_ids = list(map(lambda lord: lord['memberId'], json_object['contents']))
@@ -158,6 +165,9 @@ class LordsDivision:
 
     def get_id(self) -> int:
         return self.division_id
+
+    def get_amendment_motion_notes(self) -> str:
+        return self.amendment_motion_notes
 
     def get_division_date(self) -> Union[datetime.datetime, None]:
         return self.date
@@ -263,6 +273,12 @@ class CommonsDivision:
         self.aye_tellers: list[PartyMember] = []
         self.no_tellers: list[PartyMember] = []
 
+    def get_aye_count(self):
+        return self.aye_count
+
+    def get_no_count(self):
+        return self.no_count
+
     def get_id(self) -> int:
         return self.division_id
 
@@ -337,10 +353,3 @@ class CommonsDivision:
 
     def get_didnt_vote_members(self) -> list[PartyMember]:
         return self.didnt_vote
-
-async def division_task(instance, m_id, member_list: list[PartyMember]):
-    member = instance.get_member_by_id(m_id)
-    if member is None: member = await instance._lazy_load_member(m_id)
-    if member is None:
-        raise Exception(f"Couldn't find member {m_id}")
-    member_list.append(member)

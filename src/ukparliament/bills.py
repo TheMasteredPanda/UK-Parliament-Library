@@ -1,10 +1,21 @@
-from enum import Enum
-import utils
+from .structures.bills import Bill, BillStage, BillType, PartyMember
 import aiohttp
-from structures.bills import Bill, BillStage, BillType
+from . import utils
 
+
+async def division_task(instance, m_id, member_list: list[PartyMember]):
+    member = instance.get_member_by_id(m_id)
+    if member is None: member = await instance._lazy_load_member(m_id)
+    if member is None:
+        raise Exception(f"Couldn't find member {m_id}")
+    member_list.append(member)
 
 async def _meta_bill_task(bill: Bill, instance, session: aiohttp.ClientSession = None):
+    for stage in instance.get_bill_stages():
+        if bill._get_current_stage_id() == stage.get_stage_id():
+            bill._set_current_stage(stage)
+            break
+
     url = f"{utils.URL_BILLS}/Bills/{bill.get_bill_id()}"
     async with session.get(url) if session is not None else aiohttp.ClientSession().get(url) as resp:
             if resp.status != 200:
@@ -79,5 +90,4 @@ class SearchBillsBuilder():
         if len(self.bits) > 0:
             return f"{utils.URL_BILLS}/Bills?{'&'.join(self.bits)}"
         return f"{utils.URL_BILLS}/Bills"
-
 

@@ -1,5 +1,5 @@
 Metadata-Version: 1.2
-Name: tmp.ukparliament
+Name: tmpukparliament
 Version: 1.0.2
 Summary: A Python Library used to fetch member, bills, and voting data from the UK Parliament Rest API
 Home-page: https://github.com/TheMasteredPanda/UK-Parliament-Library
