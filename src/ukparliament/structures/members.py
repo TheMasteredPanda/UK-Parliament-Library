@@ -81,7 +81,62 @@ class LatestElectionResult:
 
     def get_candidates(self) -> list[dict]:
         return self.candidates
+
+class PartyMemberBiography:
+    def __init__(self, json_object):
+        self.representations = []
+        self.memberships = []
+        self.government_posts = []
+        self.opposition_posts = []
+        self.other_posts = []
+        self.committee_membership = []
+        self.party_memberships = []
+
+        value_object = json_object['value']
+
+        for representation in value_object['representations']:
+            self.representations.append({'house_id': representation['house'], 'constituency_name': representation['name'], 'id': representation['id'], 'started': dateparser.parse(representation['startDate']) if representation['startedDate'] is not None else None, 'ended': dateparser.parse(representation['endDate']) if representation['endDate'] is not None else None, 'additional_notes': representation['additionalInfo']})
+
+        for membership in value_object['houseMemberships']:
+            self.memberships.append({'house_id': membership['house'], 'id': membership['id'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
+
+        for post in value_object['governmentPosts']:
+            self.government_posts.append({'house_id': post['house'], 'office': post['name'], 'id': post['id'], 'started': dateparser.parse(post['startDate']) if post['startDate'] is not None else None, 'ended': dateparser.parse(post['endDate']) if post['endDate'] is not None else None, 'department': post['additionalInfo']})
+
+        for post in value_object['oppositionPosts']:
+            self.opposition_posts.append({'house_id': post['house'], 'office': post['name'], 'id': post['id'], 'started': dateparser.parse(post['startDate']) if post['startDate'] is not None else None, 'ended': dateparser.parse(post['endDate']) if post['endDate'] is not None else None})
+
+        for post in value_object['otherPosts']:
+            self.other_posts.append({'house_id': post['house'], 'office': post['name'], 'id': post['id'], 'started': dateparser.parse(post['startDate']) if post['startDate'] is not None else None, 'ended': dateparser.parse(post['endDate']) if post['endDate'] is not None else None, 'additional_notes': post['additionalInfo']})
         
+
+        for membership in value_object['committeeMemberships']:
+            self.committee_membership.append({'house_id': membership['house'], 'committee': membership['name'], 'id': membership['id'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
+
+        for membership in value_object['partyAffliations']:
+            self.party_memberships.append({'house_id': membership['house'], 'name': membership['name'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
+
+    def get_representations(self):
+        return self.representations
+
+    def get_memberships(self):
+        return self.memberships
+
+    def get_government_posts(self):
+        return self.government_posts
+
+    def get_oppositions_posts(self):
+        return self.opposition_posts
+
+    def get_other_posts(self):
+        return self.other_posts
+
+    def get_party_affiliations(self):
+        return self.party_memberships
+
+    def get_committee_memberships(self):
+        return self.committee_membership
+
 class PartyMember:
     def __init__(self, json_object):
         value_object = json_object['value']
@@ -98,6 +153,17 @@ class PartyMember:
         self.membership_from = value_object['latestHouseMembership']['membershipFrom']
         self._membership_id = value_object['latestHouseMembership']['membershipFromId']
         self.latest_election_result = None
+        self.biography = None
+
+
+    def get_biography(self) -> Union[PartyMemberBiography, None]:
+        return self.biography
+
+    def _set_biography(self, bio: PartyMemberBiography):
+        self.biography = bio
+
+    def get_thumbnail_url(self):
+        return self.thumbnail
 
     def _set_latest_election_result(self, result: LatestElectionResult):
         self.latest_election_result = result
@@ -110,6 +176,9 @@ class PartyMember:
 
     def get_membership_from(self) -> str:
         return self.membership_from #If it is a Lord then this will show the Lords membership status (life, hereditary, &c). If this is a commons member this will show the constitueny the member is representing.
+
+    def _get_membership_id(self) -> str:
+        return self._membership_id #Should only be relevant to commons members. Should be the constitueny id
 
     def is_mp(self) -> bool:
         return self._house_id != 2

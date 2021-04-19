@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
             name="ukparliament",
-            version="1.0.6",
+            version="1.0.9",
             author="TheMasteredPanda",
             description="A Python Library used to fetch member, bills, and voting data from the UK Parliament Rest API",
             url="https://github.com/TheMasteredPanda/UK-Parliament-Library",

@@ -2,7 +2,7 @@ from threading import Lock
 from aiohttp.client import ClientSession
 from cachetools import TTLCache
 from typing import Union
-from .structures.members import Party, PartyMember, LatestElectionResult, VotingEntry, ler_task, vh_task
+from .structures.members import Party, PartyMember, LatestElectionResult, PartyMemberBiography, VotingEntry, ler_task, vh_task
 from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
 from . import bills
 from .bills import _meta_bill_task
@@ -74,6 +74,14 @@ class UKParliament:
                 if party is None:
                     print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party under apparent id {member._get_party_id()}")
                     continue
+
+                async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as bio_resp:
+                    if bio_resp.status != 200:
+                        raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}. Status Code: {bio_resp.status}")
+                    bio_content = await bio_resp.json()
+                    member._set_biography(PartyMemberBiography(bio_content))
+ 
+
                 party.add_member(member)
 
             ler_tasks = []
@@ -150,7 +158,7 @@ class UKParliament:
 
     def get_member_by_name(self, member_name: str) -> Union[PartyMember, None]:
         for member in self.get_commons_members():
-            if member_name is member.get_display_name():
+            if member_name.lower() is member.get_display_name().lower():
                 return member
         return None
 
@@ -167,8 +175,16 @@ class UKParliament:
                     raise Exception(f"Couldn't lazily load member under id {member_id}. Status Code: {resp.status}.")
                 content = await resp.json()
                 member = PartyMember(content)
+
+                async with session.get(f"https://members-api.parliament.uk/api/Members/{member_id}/Biography") as bio_resp:
+                    if bio_resp.status != 200:
+                        raise Exception(f"Couldn't lazily load member bio under id {member_id}. Status Code: {bio_resp.status}")
+                    bio_content = await bio_resp.json()
+                    member._set_biography(PartyMemberBiography(bio_content))
+    
                 with self.old_member_cache_lock:
                     self.old_member_cache[member_id] = member
+
                 return member
 
     def get_bill_stages(self):
@@ -309,6 +325,8 @@ class UKParliament:
                     self.division_search_commons_cache[search_term.lower()] = divisions
                 return divisions
 
+    def get_parties(self) -> list[Party]:
+        return self.parties
 
     async def _populate_lords_division(self, division: LordsDivision):
         aye_tellers = []
