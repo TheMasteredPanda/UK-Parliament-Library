@@ -2,7 +2,8 @@ from threading import Lock
 from aiohttp.client import ClientSession
 from cachetools import TTLCache
 from typing import Union
-from .structures.members import Party, PartyMember, LatestElectionResult, PartyMemberBiography, VotingEntry, ler_task, vh_task
+from .structures.members import Party, PartyMember, ElectionResult, PartyMemberBiography, VotingEntry
+from .members import er_task, vh_task
 from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
 from . import bills
 from .bills import _meta_bill_task
@@ -43,6 +44,8 @@ class UKParliament:
         self.division_search_lords_cache = TTLCache(maxsize=90, ttl=300)
         self.bills_cache = TTLCache(maxsize=30, ttl=300)
         self.bills_cache_lock = Lock()
+        self.election_results_cache = TTLCache(maxsize=90, ttl=300)
+        self.election_results_lock = Lock()
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
@@ -75,22 +78,7 @@ class UKParliament:
                     print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party under apparent id {member._get_party_id()}")
                     continue
 
-                async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as bio_resp:
-                    if bio_resp.status != 200:
-                        raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}. Status Code: {bio_resp.status}")
-                    bio_content = await bio_resp.json()
-                    member._set_biography(PartyMemberBiography(bio_content))
- 
-
                 party.add_member(member)
-
-            ler_tasks = []
-
-            for m in self.get_commons_members():
-                ler_tasks.append(ler_task(m, session))
-
-            
-            await asyncio.gather(*ler_tasks)
 
             async with session.get(f'{utils.URL_BILLS}/BillTypes') as bt_resp:
                 if bt_resp.status != 200:
@@ -106,6 +94,28 @@ class UKParliament:
             for json_bill_stage in json_bill_stages:
                 self.bill_stages.append(BillStage(json_bill_stage))
 
+
+    async def get_biography(self, member: PartyMember) -> PartyMemberBiography:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as bio_resp:
+                if bio_resp.status != 200:
+                    raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}. Status Code: {bio_resp.status}")
+                bio_content = await bio_resp.json()
+                return PartyMemberBiography(bio_content)
+
+    async def get_election_results(self, member: PartyMember) -> list[ElectionResult]:
+        with self.election_results_lock:
+            cached_obj = self.election_results_cache.get(member._get_membership_from_id())
+            if cached_obj is not None:
+                return cached_obj
+
+        async with aiohttp.ClientSession() as session:
+            election_result = await asyncio.gather(er_task(member, session))
+            elections = election_result[0]
+
+            with self.election_results_lock:
+                self.election_results_cache[member._get_membership_from_id()] = elections
+            return elections #type: ignore
 
 
     async def get_voting_history(self, member: PartyMember) -> list[VotingEntry]:
@@ -175,16 +185,6 @@ class UKParliament:
                     raise Exception(f"Couldn't lazily load member under id {member_id}. Status Code: {resp.status}.")
                 content = await resp.json()
                 member = PartyMember(content)
-
-                async with session.get(f"https://members-api.parliament.uk/api/Members/{member_id}/Biography") as bio_resp:
-                    if bio_resp.status != 200:
-                        raise Exception(f"Couldn't lazily load member bio under id {member_id}. Status Code: {bio_resp.status}")
-                    bio_content = await bio_resp.json()
-                    member._set_biography(PartyMemberBiography(bio_content))
-    
-                with self.old_member_cache_lock:
-                    self.old_member_cache[member_id] = member
-
                 return member
 
     def get_bill_stages(self):

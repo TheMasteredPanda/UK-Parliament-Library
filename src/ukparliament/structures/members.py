@@ -46,23 +46,28 @@ class VotingEntry:
     def get_division_id(self):
         return self.division_url.split('/')[-1].replace('.json','')
 
-class LatestElectionResult:
+class ElectionResult:
     def __init__(self, json_object):
-        value_object = json_object['value']
-        self.result = value_object['result']
-        self.notional = value_object['isNotional']
-        self.electorate = value_object['electorate']
-        self.turnout = value_object['turnout']
-        self.majority = value_object['majority']
+        self.result = json_object['result']
+        self.notional = json_object['isNotional']
+        self.electorate = json_object['electorate']
+        self.turnout = json_object['turnout']
+        self.date = dateparser.parse(json_object['electionDate'])
+        self.majority = json_object['majority']
         self.candidates = []
 
-        for candidate_object in value_object['candidates']:
+        for candidate_object in json_object['candidates']:
             candidate_name = candidate_object['name']
             candidate_party_id = candidate_object['party']['id']
+            candidate_party_name = candidate_object['party']['name']
             vote_share_change = candidate_object['resultChange']
             candidate_order = candidate_object['rankOrder']
             votes_received = candidate_object['votes']
             vote_share = candidate_object['voteShare']
+            self.candidates.append({'name': candidate_name, 'party_id': candidate_party_id, 'party_name': candidate_party_name, 'vote_share_change': vote_share_change, 'order': candidate_order, 'votes': votes_received, 'vote_share': vote_share})
+
+    def get_election_date(self) -> Union[datetime.datetime, None]:
+        return self.date
 
     def get_result(self) -> str:
         return self.result
@@ -95,7 +100,7 @@ class PartyMemberBiography:
         value_object = json_object['value']
 
         for representation in value_object['representations']:
-            self.representations.append({'house_id': representation['house'], 'constituency_name': representation['name'], 'id': representation['id'], 'started': dateparser.parse(representation['startDate']) if representation['startedDate'] is not None else None, 'ended': dateparser.parse(representation['endDate']) if representation['endDate'] is not None else None, 'additional_notes': representation['additionalInfo']})
+            self.representations.append({'house_id': representation['house'], 'constituency_name': representation['name'], 'id': representation['id'], 'started': dateparser.parse(representation['startDate']) if representation['startDate'] is not None else None, 'ended': dateparser.parse(representation['endDate']) if representation['endDate'] is not None else None, 'additional_notes': representation['additionalInfo']})
 
         for membership in value_object['houseMemberships']:
             self.memberships.append({'house_id': membership['house'], 'id': membership['id'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
@@ -113,7 +118,7 @@ class PartyMemberBiography:
         for membership in value_object['committeeMemberships']:
             self.committee_membership.append({'house_id': membership['house'], 'committee': membership['name'], 'id': membership['id'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
 
-        for membership in value_object['partyAffliations']:
+        for membership in value_object['partyAffiliations']:
             self.party_memberships.append({'house_id': membership['house'], 'name': membership['name'], 'started': dateparser.parse(membership['startDate']) if membership['startDate'] is not None else None, 'ended': dateparser.parse(membership['endDate']) if membership['endDate'] is not None else None, 'additional_notes': membership['additionalInfo']})
 
     def get_representations(self):
@@ -152,7 +157,6 @@ class PartyMember:
         self._house_id = value_object['latestHouseMembership']['house']
         self.membership_from = value_object['latestHouseMembership']['membershipFrom']
         self._membership_id = value_object['latestHouseMembership']['membershipFromId']
-        self.latest_election_result = None
         self.biography = None
 
 
@@ -165,14 +169,8 @@ class PartyMember:
     def get_thumbnail_url(self):
         return self.thumbnail
 
-    def _set_latest_election_result(self, result: LatestElectionResult):
-        self.latest_election_result = result
-
     def _get_membership_from_id(self) -> int:
         return self._membership_id
-
-    def get_latest_election_result(self) -> Union[LatestElectionResult, None]:
-        return self.latest_election_result
 
     def get_membership_from(self) -> str:
         return self.membership_from #If it is a Lord then this will show the Lords membership status (life, hereditary, &c). If this is a commons member this will show the constitueny the member is representing.
@@ -259,31 +257,12 @@ class Party:
     def get_secondary_party_colour(self):
         return self.secondary_colour
 
+    def get_abber(self):
+        return self.abbreviation
+
     def find_member_by_name(self, name: str) -> Union[PartyMember, None]:
         for member in self.get_all_members():
             if name in member.get_display_name() or name in member.get_titled_name() or name in member.get_addressed_name():
                 return member
         return None
-
-async def ler_task(ler_member: PartyMember, session: aiohttp.ClientSession):
-    async with session.get(f'{utils.URL_MEMBERS}/Members/{ler_member.get_id()}/LatestElectionResult') as ler_resp:
-        if ler_resp.status != 200:
-            return
-        
-        content = await ler_resp.json()
-        ler_member._set_latest_election_result(LatestElectionResult(content))
-
-async def vh_task(vi_member: PartyMember, session: aiohttp.ClientSession, cache: TTLCache, lock: Lock):
-    url = f'{utils.URL_MEMBERS}/Members/{vi_member.get_id()}/Voting?house={"Commons" if vi_member.is_mp() is True else "Lords"}'
-    items = await load_data(url, session)
-
-    voting_list = []
-
-    for item in items:
-        entry = VotingEntry(item)
-        voting_list.append(entry)
-
-    with lock:
-        cache[vi_member.get_id()] = voting_list
-
 
