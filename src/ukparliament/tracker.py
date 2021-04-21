@@ -1,4 +1,6 @@
 import asyncio
+from asyncio.events import AbstractEventLoop
+import time
 import aiohttp
 import dateparser
 import datetime
@@ -6,27 +8,26 @@ from typing import Any, Union
 from aiohttp.client import ClientSession
 import feedparser
 import schedule
-from .ukparliament import UKParliament
 from .utils import BetterEnum
 
 class Storage:
-    def get_feed_update_ids(self, bill_id: int) -> dict:
-        return {}
+    async def get_feed_update_ids(self, bill_id: int) -> list:
+        return []
 
-    def store_updates(self, updates: list):
+    async def store_update_ids(self, bill_id: int, updates: list[str]):
         pass
 
-    def update_stored(self, guid: str) -> bool:
+    async def update_stored(self, guid: str) -> bool:
         return False
 
-    def get_feeds(self) -> list[Any]:
+    async def get_feeds(self) -> list[Any]:
         '''
         Returns a list of feeds that were being tracked to be tracked
         once more.
         '''
         return []
 
-    def expire_feed(self, guid: str):
+    async def expire_feed(self, guid: str):
         pass
 
 class FeedUpdate:
@@ -81,7 +82,7 @@ class Feed:
         A list of rss update ids associated with this bill. The feed will not
         load all but the updates that have not been stored yet.
     last_update_date:
-        The date the feed was last updated. Derived from the headers of the
+        The date the feed was last updated. Derived from the feed metadata of the
         rss feed.
     published_date:
         The date the bill was first published.
@@ -97,52 +98,54 @@ class Feed:
     def __init__(self, rss_url, storage: Storage):
         self.storage = storage
         self.bill_id = rss_url.split('/')[-1].replace('.rss', '')
-        self.entries = storage.get_feed_update_ids(self.bill_id)
-        self.last_update_date = self.get_latest_update()
-        self.published_date = None
+        self.entries = []
+        self.last_update_date: Union[datetime.datetime, None] = None
+        self.published_date: Union[datetime.datetime, None] = None
         self.url = rss_url
 
-    async def poll(self, session: ClientSession):
-        async with session.head(self.url) as resp:
-            if resp.status != 200:
-                raise Exception(f"Couldn't fetch headers of {self.url}. Status Code: {resp.status}")
-            header_date = dateparser.parse(resp.headers['Date'])
-            if self.last_update_date > header_date:
-                return []
-            async with session.get(self.url) as rss_resp:
-                if rss_resp.status != 200:
-                    raise Exception(f"Couldn't fetch rss feed of {self.url}. Status Code: {rss_resp.status}")
-                text = await rss_resp.text()
-                parsed_text = feedparser.parse(text)
-                if self.published_date is None:
-                    self.published_date = dateparser.parse(parsed_text['feed']['pubDate']) #type: ignore
+    async def load(self):
+        self.entries = await self.storage.get_feed_update_ids(self.bill_id)
 
-                updates = []
+    async def poll(self, session: ClientSession, testing: bool = False):
+        async with session.get(self.url) as rss_resp:
+            if rss_resp.status != 200:
+                raise Exception(f"Couldn't fetch rss feed of {self.url}. Status Code: {rss_resp.status}")
 
-                for entry in parsed_text['entries']:
-                    entry_date = dateparser.parse(entry['published']) #type: ignore
-                    
-                    if entry_date > self.last_update_date:
-                        updates.append(FeedUpdate(entry))
-                    else:
-                        self.storage.store_updates(updates)
-                        self.entries = self.storage.get_feed_update_ids(self.bill_id)
-                        self.last_update_date = self.get_latest_update()
-                        return updates
+            text = await rss_resp.text()
+            parsed_text = feedparser.parse(text)
+            rss_feed_update = dateparser.parse(parsed_text['feed']['updated']) #type: ignore
+            if self.last_update_date is not None:
+                if self.last_update_date.timestamp() >= rss_feed_update.timestamp():
+                    return
+            else:
+                self.last_update_date = rss_feed_update
+
+            if self.published_date is None:
+                self.published_date = dateparser.parse(parsed_text['feed']['published']) #type: ignore
 
 
-    def get_latest_update(self):
-        key = None
+            updates = []
+            last_update_entry = None
 
-        for entry_key in self.entries.keys():
-            if key is None:
-                key = entry_key
-                continue
+            for entry in parsed_text['entries']:
+                entry_date = dateparser.parse(entry['published']) #type: ignore
+                if entry_date > self.last_update_date or testing is True: #type: ignore
+                    updates.append(FeedUpdate(entry))
+                    last_update_entry = entry_date
+                else:
+                    await self.storage.store_update_ids(self.bill_id, updates)
+                    self.entries = await self.storage.get_feed_update_ids(self.bill_id)
+                    self.last_update_date = entry_date
+                return updates
 
-            if self.entries[key]['date'] < self.entries[entry_key]:
-                key = entry_key
+    def get_id(self):
+        return self.bill_id
 
-        return self.entries[key]
+    def get_last_date(self):
+        return self.last_update_date
+
+    def get_url(self):
+        return self.url
 
 class Conditions(BetterEnum):
     PUBLICATIONS = 0,
@@ -184,58 +187,88 @@ class TrackerListener:
 
 
 
-    async def handle(self, update: FeedUpdate):
-        await self.func(update)
+    async def handle(self, feed: Feed, update: FeedUpdate):
+        await self.func(feed, update)
 
 class Tracker:
-    def __init__(self, parliament: UKParliament, storage: Storage):
+    def __init__(self, parliament, storage: Storage, event_loop: AbstractEventLoop = None):
         self.parliament = parliament
-        self.feeds = []
+        self.feeds: list[Feed] = []
         self.storage = storage
         self.listeners: list[TrackerListener] = []
         self.last_update: Union[datetime.datetime, None] = None
+        self.loop = asyncio.new_event_loop() if event_loop is None else event_loop
+        asyncio.set_event_loop(self.loop)
 
     #Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
+    async def start_event_loop(self, testing: bool = False):
+        async def main():
+            asyncio.ensure_future(self._poll(testing))
+            await asyncio.sleep(30)
+            await main()
+
+        await main()
+    
+    def get_event_loop(self):
+        return self.loop
+
     async def _load(self):
-        feeds = []
+        '''
+        Loads feeds that were once being tracked from the storage medium
+        into feed instances.
+        '''
+        print('Loading feeds')
+        self.feeds = await self.storage.get_feeds()
 
-        if self.storage is not None:
 
-            pass
-
-    async def _poll_task(self, feed: Feed):
+    async def _poll_task(self, feed: Feed, testing: bool = False):
         handler_tasks = []
 
         async with aiohttp.ClientSession() as session:
-            updates = await feed.poll(session)
+            updates = await feed.poll(session, testing)
             if updates is None or len(updates) == 0: return
             for update in updates:
                 for listener in self.listeners:
                     if listener.meets_conditions(update) is False:
                         continue
-                    handler_tasks.append(listener.handle(update))
+                    handler_tasks.append(listener.handle(feed, update))
             if len(handler_tasks) > 0:
-                asyncio.run(*handler_tasks)
+                asyncio.gather(*handler_tasks)
+
+    def is_feed_already(self, id: str):
+        for feed in self.feeds:
+            if feed.get_id() == id:
+                return True
+        return False
             
+    def register(self, func, conditionals: list[Conditions] = []):
+        self.listeners.append(TrackerListener(func, conditionals))
+
     #Polls the currently tracked feeds, creates new feeds that have not yet been tracked, and expires feeds
     #That have not been updated for at least two months. 
-    async def _poll(self):
-
+    async def _poll(self, testing: bool = False):
         async with aiohttp.ClientSession() as session:
-            async with session.head('https://bills-api.parliament.uk/Rss/allbills.rss') as h_resp:
-                if h_resp.status != 200:
-                    raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {h_resp.status}")
+            async with session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
+                if resp.status != 200:
+                    raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
 
-                header_date = dateparser.parse(h_resp.headers['Date'])
-                if self.last_update is None or header_date > self.last_update:
-                    async with session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
-                        if resp.status != 200:
-                            raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
+                parsed_text = feedparser.parse(await resp.text())
+                rss_last_update = dateparser.parse(parsed_text['feed']['updated']) #type: ignore
+                if self.last_update is not None:
+                    if self.last_update.timestamp() >= rss_last_update.timestamp():
+                        print("Dates equal. No need to additionally poll.")
+                        return
+                else:
+                    self.last_update = rss_last_update
 
-                        parsed_text = feedparser.parse(await resp.text())
+                    print(f'Parsing {len(parsed_text["items"])} items')
+                    for item in parsed_text['items']:
+                        bill_id = item['id'].split('/')[-1] #type: ignore
+                        if self.is_feed_already(bill_id):
+                            continue
+                        self.feeds.append(Feed(f'https://bills-api.parliament.uk/Rss/Bills/{bill_id}.rss', storage=self.storage))
 
-                        for item in parsed_text['item']:
-                            #TODO: find feed it is already being tracked
-                            #TODO: if feed is not found, create new feed
-                            #TODO: poll feed.
-                            pass
+        tasks = []
+        for feed in self.feeds:
+            tasks.append(self._poll_task(feed, testing))
+        await asyncio.gather(*tasks)

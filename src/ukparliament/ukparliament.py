@@ -5,6 +5,7 @@ from typing import Union
 from .structures.members import Party, PartyMember, ElectionResult, PartyMemberBiography, VotingEntry
 from .members import er_task, vh_task
 from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
+from .tracker import Tracker, Storage
 from . import bills
 from .bills import _meta_bill_task
 from . import utils
@@ -46,6 +47,17 @@ class UKParliament:
         self.bills_cache_lock = Lock()
         self.election_results_cache = TTLCache(maxsize=90, ttl=300)
         self.election_results_lock = Lock()
+        self.tracker = None
+
+    async def start_tracker(self, storage):
+        self.tracker = Tracker(self, storage)
+
+    async def load_tracker(self):
+        await self.tracker._load()
+        await self.tracker.start_event_loop()
+
+    def get_tracker(self) -> Union[Tracker, None]:
+        return self.tracker
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
