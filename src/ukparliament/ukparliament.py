@@ -49,12 +49,12 @@ class UKParliament:
         self.election_results_lock = Lock()
         self.tracker = None
 
-    async def start_tracker(self, storage, debug: bool = False):
-        self.tracker = Tracker(self, storage, None, debug)
+    async def start_tracker(self, storage):
+        self.tracker = Tracker(self, storage)
 
-    async def load_tracker(self, testing: bool = False):
+    async def load_tracker(self):
         await self.tracker._load()
-        await self.tracker.start_event_loop(testing)
+        await self.tracker.start_event_loop()
 
     def get_tracker(self) -> Union[Tracker, None]:
         return self.tracker

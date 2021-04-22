@@ -12,23 +12,10 @@ import schedule
 from .utils import BetterEnum
 
 class Storage:
-    async def get_feed_update_ids(self, bill_id: int) -> list:
-        return []
-
-    async def store_update_ids(self, bill_id: int, updates: list[str]):
+    async def add_feed_update(self, bill_id: int, feed_update_timestamp: float):
         pass
 
-    async def update_stored(self, guid: str) -> bool:
-        return False
-
-    async def get_feeds(self) -> list[Any]:
-        '''
-        Returns a list of feeds that were being tracked to be tracked
-        once more.
-        '''
-        return []
-
-    async def expire_feed(self, guid: str):
+    async def has_update_stored(self, bill_id: int, feed_update_timestamp: float):
         pass
 
 class FeedUpdate:
@@ -93,7 +80,6 @@ class Feed:
         self.bill_id = self.bill_url.split('/')[-1]
         self.last_update = None
 
-
     async def process_poll_item(self, json_object, debug_log: bool = False):
         '''
         Polls individual items from the main rss feed. Used primarily to get all the other information
@@ -118,7 +104,7 @@ class Feed:
         return self.last_update
 
     def get_id(self):
-        return self.bill_id
+        return int(self.bill_id)
 
     def get_bill_url(self):
         return self.bill_url
@@ -186,27 +172,20 @@ class Tracker:
     def get_event_loop(self):
         return self.loop
 
-    async def _load(self):
-        '''
-        Loads feeds that were once being tracked from the storage medium
-        into feed instances.
-        '''
-        print('Loading feeds')
-        self.feeds = await self.storage.get_feeds()
-
-
     async def _poll_task(self, feed: Feed, main_poll_object = None):
         handler_tasks = []
         if self.listeners == 0: return
         update = await feed.process_poll_item(main_poll_object)
         if update is None: return
+        is_stored = await self.storage.has_update_stored(feed.get_id(), update.get_update_date().timestamp())
+        if is_stored: return
         for listener in self.listeners:
             if listener.meets_conditions(update) is False:
-                print('Failed conditions')
                 continue
             handler_tasks.append(listener.handle(feed, update))
+            await self.storage.add_feed_update(feed.get_id(), feed.get_last_update().timestamp())
+
         if len(handler_tasks) > 0: 
-            print(f'Executing {len(handler_tasks)} handlers')
             await asyncio.gather(*handler_tasks)
 
     def is_feed_already(self, id: str):
@@ -259,5 +238,5 @@ class Tracker:
                     if feed is None: continue
                     tasks.append(self._poll_task(feed, item))
 
-        print(f'Running {len(tasks)} tasks')
+        if self.debug_log: print(f'Running {len(tasks)} tasks')
         await asyncio.gather(*tasks)
