@@ -11,13 +11,6 @@ import feedparser
 import schedule
 from .utils import BetterEnum
 
-class Storage:
-    async def add_feed_update(self, bill_id: int, feed_update_timestamp: float):
-        pass
-
-    async def has_update_stored(self, bill_id: int, feed_update_timestamp: float):
-        pass
-
 class FeedUpdate:
     def __init__(self, feed_update_object):
         self.stage = feed_update_object.attrs['p4:stage'] if 'p4:stage' in feed_update_object.attrs else None
@@ -48,6 +41,16 @@ class FeedUpdate:
 
     def get_categories(self):
         return self.categories
+
+class Storage:
+    async def add_feed_update(self, bill_id: int, update: FeedUpdate):
+        pass
+
+    async def has_update_stored(self, bill_id: int, update: FeedUpdate):
+        pass
+
+    async def get_last_update(self, bill_id: int):
+        pass
 
 class Feed:
     '''     feed 
@@ -158,7 +161,7 @@ class Tracker:
         self.last_update: Union[datetime.datetime, None] = None
         self.loop = asyncio.new_event_loop() if event_loop is None else event_loop
         asyncio.set_event_loop(self.loop)
-        self.debug_log = True
+        self.debug_log = False
 
     #Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
     async def start_event_loop(self, testing: bool = False):
@@ -178,7 +181,7 @@ class Tracker:
         update = await feed.process_poll_item(main_poll_object)
         if update is None: return
         is_stored = await self.storage.has_update_stored(feed.get_id(), update.get_update_date().timestamp())
-        if is_stored: return
+        if is_stored is True: return
         for listener in self.listeners:
             if listener.meets_conditions(update) is False:
                 continue
@@ -231,7 +234,6 @@ class Tracker:
                     if self.is_feed_already(bill_id):
                         feed = self.get_feed(bill_id)
                     else:
-                        print('New feed')
                         feed = Feed(item.guid.text)
                         self.feeds.append(feed)
 
