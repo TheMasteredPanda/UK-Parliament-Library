@@ -42,7 +42,7 @@ class FeedUpdate:
     def get_categories(self):
         return self.categories
 
-class Storage:
+class BillsStorage:
     async def add_feed_update(self, bill_id: int, update: FeedUpdate):
         pass
 
@@ -152,8 +152,8 @@ class TrackerListener:
     async def handle(self, feed: Feed, update: FeedUpdate):
         await self.func(feed, update)
 
-class Tracker:
-    def __init__(self, parliament, storage: Storage, event_loop: AbstractEventLoop = None, debug_log: bool = False):
+class BillsTracker:
+    def __init__(self, parliament, storage: BillsStorage, event_loop: AbstractEventLoop = None, debug_log: bool = False):
         self.parliament = parliament
         self.feeds: list[Feed] = []
         self.storage = storage
@@ -180,13 +180,13 @@ class Tracker:
         if self.listeners == 0: return
         update = await feed.process_poll_item(main_poll_object)
         if update is None: return
-        is_stored = await self.storage.has_update_stored(feed.get_id(), update.get_update_date().timestamp())
+        is_stored = await self.storage.has_update_stored(feed.get_id(), update)
         if is_stored is True: return
         for listener in self.listeners:
             if listener.meets_conditions(update) is False:
                 continue
             handler_tasks.append(listener.handle(feed, update))
-            await self.storage.add_feed_update(feed.get_id(), feed.get_last_update().timestamp())
+            await self.storage.add_feed_update(feed.get_id(), update)
 
         if len(handler_tasks) > 0: 
             await asyncio.gather(*handler_tasks)

@@ -51,4 +51,4 @@ async def load_data(url: str, session: aiohttp.ClientSession, total_search_resul
             tasks.append(task(f"{url}{skipSegment if page != 0 else ''}"))
 
         await asyncio.gather(*tasks)
-        return final_list
+        return final_list[0:total_results] if (total_results != 0 and total_results != -1) else final_list

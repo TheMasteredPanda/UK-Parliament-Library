@@ -74,7 +74,7 @@ class Bill:
         self.bill_type = None
         self.sponsors: list[PartyMember] = []
         self.long_title = None
-        self.date_introduced = dateparser.parse(value_object['currentBillDocument']['date'])
+        self.date_introduced = dateparser.parse(value_object['sessions'][0]['startDate'])
 
     def get_date_introduced(self) -> Union[datetime.datetime, None]:
         return self.date_introduced

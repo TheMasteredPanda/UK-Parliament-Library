@@ -5,7 +5,8 @@ from typing import Union
 from .structures.members import Party, PartyMember, ElectionResult, PartyMemberBiography, VotingEntry
 from .members import er_task, vh_task
 from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
-from .tracker import Tracker, Storage
+from .bills_tracker import BillsTracker, BillsStorage
+from .divisions_tracker import DivisionsTracker, DivisionStorage
 from . import bills
 from .bills import _meta_bill_task
 from . import utils
@@ -47,16 +48,28 @@ class UKParliament:
         self.bills_cache_lock = Lock()
         self.election_results_cache = TTLCache(maxsize=90, ttl=300)
         self.election_results_lock = Lock()
-        self.tracker = None
+        self.bills_tracker = None
+        self.divisions_tracker = None
 
-    def start_tracker(self, storage):
-        self.tracker = Tracker(self, storage)
+    def start_bills_tracker(self, storage: BillsStorage):
+        self.bills_tracker = BillsTracker(self, storage)
 
-    async def load_tracker(self):
-        await self.tracker.start_event_loop()
+    async def load_bills_tracker(self):
+        if self.bills_tracker is None: return
+        await self.bills_tracker.start_event_loop()
 
-    def get_tracker(self) -> Union[Tracker, None]:
-        return self.tracker
+    def get_bills_tracker(self) -> Union[BillsTracker, None]:
+        return self.bills_tracker
+
+    def start_divisions_tracker(self, storage: DivisionStorage):
+        self.divisions_tracker = DivisionsTracker(self, storage)
+
+    async def load_divisions_tracker(self):
+       if self.divisions_tracker is None: return
+       await self.divisions_tracker.start_event_loop()
+
+    def get_divisions_tracker(self):
+        return self.divisions_tracker
 
     async def load(self):
         async with aiohttp.ClientSession() as session: 
@@ -285,7 +298,7 @@ class UKParliament:
                 return division
 
 
-    async def search_for_lords_division(self, search_term: str) -> list[LordsDivision]:
+    async def search_for_lords_divisions(self, search_term: str = '', result_limit: int = -1) -> list[LordsDivision]:
         with self.division_search_lords_lock:
             cached_obj = self.division_search_lords_cache.get(search_term.lower())
             if cached_obj is not None:
@@ -293,12 +306,12 @@ class UKParliament:
 
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults?SearchTerm={formatted_search_term}") as resp:
+            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults" + (f"?SearchTerm={formatted_search_term}" if search_term != '' else '')) as resp:
                 if resp.status != 200:
                     raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}. Status Code: {resp.status}")
 
                 total_seach_results = await resp.json()
-                division_items = await utils.load_data(f"{utils.URL_LORDS_VOTES}/Divisions/search?SearchTerm={formatted_search_term}", session, total_seach_results)
+                division_items = await utils.load_data(f"{utils.URL_LORDS_VOTES}/Divisions/search" + (f"?SearchTerm={formatted_search_term}" if search_term != '' else ''), session, total_seach_results if result_limit == -1 else result_limit)
 
                 divisions = []
 
@@ -311,7 +324,7 @@ class UKParliament:
                     self.division_search_lords_cache[search_term.lower()] = divisions
                 return divisions
 
-    async def search_for_commons_divisions(self, search_term: str) -> list[CommonsDivision]:
+    async def search_for_commons_divisions(self, search_term: str = "", result_limit: int = -1) -> list[CommonsDivision]:
         with self.division_search_commons_lock:
             cached_obj = self.division_search_commons_cache.get(search_term.lower())
             if cached_obj is not None:
@@ -320,12 +333,12 @@ class UKParliament:
 
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults?queryParameters.searchTerm={formatted_search_term}") as resp:
+            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults" + (f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '')) as resp:
                 if resp.status != 200:
                     raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}'. Status Code: {resp.status}")
                 
                 total_search_results = await resp.json()
-                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search?queryParameters.searchTerm={formatted_search_term}", session, total_search_results)
+                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search" + (f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else ''), session, total_search_results if result_limit == -1 else result_limit)
                 divisions = []
                 for item in division_items:
                     division = CommonsDivision(item) 
