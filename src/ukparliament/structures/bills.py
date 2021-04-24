@@ -150,6 +150,8 @@ class LordsDivision:
         self.sponsoring_member_id = json_object['sponsoringMemberId']
         self._is_house = json_object['isHouse']
         self.amendment_motion_notes = json_object['amendmentMotionNotes']
+        if self.amendment_motion_notes is not None and self.amendment_motion_notes is not '':
+            self.amendment_motion_notes = self.amendment_motion_notes.replace('<p>', '').replace('</p>', '').replace('<em>', '').replace('<br />', '').replace('</em>', '')
         self.gov_won = json_object['isGovernmentWin']
         self.remote_voting_start = dateparser.parse(json_object['remoteVotingStart']) if json_object['remoteVotingStart'] is not None else None
         self.remote_voting_end = dateparser.parse(json_object['remoteVotingEnd']) if json_object['remoteVotingEnd'] is not None else None

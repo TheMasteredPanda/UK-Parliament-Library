@@ -61,7 +61,8 @@ class DivisionsTracker:
         await main()
 
 
-    async def _division_task(self, division: Union[LordsDivision, CommonsDivision]):
+    async def _division_task(self, division_id: int, lords_division: bool = False):
+        division = await self.parliament.get_lords_division(division_id) if lords_division else await self.parliament.get_commons_division(division_id)
         has_been_stored = await self.storage.division_stored(division)
         if has_been_stored: return
         title = division.get_division_title() 
@@ -70,7 +71,8 @@ class DivisionsTracker:
             bill_section = title.split("Bill")[0] + "Bill"
             bills = await self.parliament.search_bills(url=SearchBillsBuilder.builder().set_search_term(bill_section).build())
             if len(bills) > 0:
-                bill = bills[0]
+                if bills[0].get_title().startswith(bill_section):
+                    bill = bills[0]
 
         if bill is not None:
             has_been_stored_b = await self.storage.bill_division_stored(bill.get_bill_id(), division)
@@ -94,14 +96,14 @@ class DivisionsTracker:
 
         tasks = []
         for division in divisions:
-            tasks.append(self._division_task(division))
+            tasks.append(self._division_task(division.get_id(), False))
         await asyncio.gather(*tasks)
 
     async def _poll_lords(self):
-        divisions = await self.parliament.search_for_lords_divisions(result_limit=10)
-        print(f"Got {len(divisions)} lords divisions.")
+        divisions: list[LordsDivision] = await self.parliament.search_for_lords_divisions(result_limit=10)
+        divisions.reverse()
 
         tasks = []
         for division in divisions:
-            tasks.append(self._division_task(division))
+            tasks.append(self._division_task(division.get_id(), True))
         await asyncio.gather(*tasks)

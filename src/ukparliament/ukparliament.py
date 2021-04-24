@@ -319,7 +319,7 @@ class UKParliament:
                     division = LordsDivision(item)
                     await self._populate_lords_division(division)
                     divisions.append(division)
-
+                
                 with self.division_search_lords_lock:
                     self.division_search_lords_cache[search_term.lower()] = divisions
                 return divisions
