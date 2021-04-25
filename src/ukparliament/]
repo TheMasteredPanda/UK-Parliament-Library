@@ -45,11 +45,11 @@ class FeedUpdate:
 
 class PublicationUpdate:
     def __init__(self, publication_update):
-        self.guid = publication_update.guid.text
-        self.category = publication_update.category.text
-        self.title = publication_update.title.text
-        self.description = publication_update.description.text
-        self.publication_date = dateparser.parse(publication_update.pubdate.text)
+        self.guid = publication_update.guid
+        self.category = publication_update.category
+        self.title = publication_update.title
+        self.description = publication_update.description
+        self.publication_date = dateparser.parse(publication_update.pubDate)
 
     def get_guid(self):
         return self.guid
@@ -112,7 +112,6 @@ class Feed:
         self.bill_url = bill_url
         self.bill_id = self.bill_url.split('/')[-1]
         self.last_update = None
-        self.publications_last_update = datetime.datetime.now() 
         self.rss_individual_url = f'https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss'
     
     async def _poll_publications(self):
@@ -124,17 +123,15 @@ class Feed:
             async with session.get(self.rss_individual_url) as resp:
                 if resp.status != 200:
                     raise Exception("Couldn't fetch individual rss feed of bill {self.bill_id}")
-                soup = BeautifulSoup(await resp.text(), features='lxml')
+                soup = BeautifulSoup(await resp.text())
                 rss_last_update = dateparser.parse(soup.rss.channel.lastbuilddate.text)
-                if self.publications_last_update is None:
-                    self.publications_last_update = rss_last_update
-                if self.publications_last_update.timestamp() < rss_last_update.timestamp(): return
                 items = soup.rss.channel.find_all('item')
+                print(f"Parsed {len(items)}")
                 publications = []
                 for item in items:
-                    category = item.category
-                    if category is None: continue
-                    if category.text.lower() == 'publication':
+                    print(item.category)
+                    if 'category' in item and item.category.text.lower() != 'publication':
+                        print("is publication")
                         publications.append(PublicationUpdate(item))
             return publications
 
@@ -174,6 +171,7 @@ class Conditions(BetterEnum):
     GOV_BILL = 3,
     PRI_BILL = 4,
     ROYAL_ASSENT = 5,
+    PUBLICATION = 6,
     ALL = 7
 
 class TrackerListener:
@@ -184,6 +182,10 @@ class TrackerListener:
     def meets_conditions(self, update: FeedUpdate):
         if Conditions.ALL in self.conditionals:
             return True
+
+        if Conditions.PUBLICATIONS in self.conditionals:
+            if 'publication' in update.get_categories():
+                return True
 
         if Conditions.LORDS in self.conditionals:
             if 'lords' in update.get_categories():
@@ -203,17 +205,16 @@ class TrackerListener:
         await self.func(feed, update)
 
 class BillsTracker:
-    def __init__(self, parliament, storage: BillsStorage, index_after: datetime.datetime = datetime.datetime.now()):
+    def __init__(self, parliament, storage: BillsStorage, event_loop: AbstractEventLoop = None, debug_log: bool = False):
         self.parliament = parliament
         self.feeds: list[Feed] = []
         self.storage = storage
         self.listeners: list[TrackerListener] = []
         self.publication_listeners = []
         self.last_update: Union[datetime.datetime, None] = None
+        self.loop = asyncio.new_event_loop() if event_loop is None else event_loop
+        asyncio.set_event_loop(self.loop)
         self.debug_log = False
-        self.index_after = index_after
-        self.bills_first_polling = False
-        self.publish_first_polling = False
 
     #Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
     async def start_event_loop(self, testing: bool = False):
@@ -225,8 +226,8 @@ class BillsTracker:
 
         await main()
     
-    def _get_index_after_date(self):
-        return self.index_after
+    def get_event_loop(self):
+        return self.loop
 
     async def _poll_task(self, feed: Feed, main_poll_object = None):
         handler_tasks = []
@@ -235,10 +236,6 @@ class BillsTracker:
         if update is None: return
         is_stored = await self.storage.has_update_stored(feed.get_id(), update)
         if is_stored is True: return
-
-        if (update.get_update_date().timestamp() < self._get_index_after_date().timestamp()) and self.bills_first_polling:
-            return
-
         for listener in self.listeners:
             if listener.meets_conditions(update) is False:
                 continue
@@ -261,38 +258,41 @@ class BillsTracker:
         self.publication_listeners.append(func)
 
     async def _publication_poll_task(self, feed: Feed, update: PublicationUpdate):
-        if await self.storage.has_publication_update(feed.get_id(), update): return
+        print(update)
+        if self.storage.has_publication_update(feed.get_id(), update): return
 
         async def _task(func, feed: Feed, update: PublicationUpdate):
-            await self.storage.add_publication_update(feed.get_id(), update)
             await func(feed,update)
+            await self.storage.add_publication_update(feed.get_id(), update)
 
         tasks = []
 
         for listener in self.publication_listeners:
+            print(f'Invoking {len(self.publication_listeners)} listeners')
             tasks.append(_task(listener, feed, update))
 
         await asyncio.gather(*tasks)
 
     async def _publication_poll(self):
+        print('Polling publications')
         p_tasks = []
 
         async def _task(feed: Feed):
+            print("In task")
             updates = await feed._poll_publications()
-            if updates is None: return
+            print(f"Got {len(updates)} updates")
 
             tasks = []
             for update in updates:
-                if (update.get_publication().timestamp() < self._get_index_after_date().timestamp()) and self.publish_first_polling:
-                    return
-
                 tasks.append(self._publication_poll_task(feed, update))
             await asyncio.gather(*tasks)
 
-        for feed in self.feeds:
+        print(f'Polling {len(self.feeds)} feeds')
+        p_tasks.append(_task(self.feeds[1]))
+        '''for feed in self.feeds:
             p_tasks.append(_task(feed))
+            break'''
         await asyncio.gather(*p_tasks)
-        self.publish_first_polling = False
 
     #Polls the currently tracked feeds, creates new feeds that have not yet been tracked, and expires feeds
     #That have not been updated for at least two months. 
@@ -330,4 +330,3 @@ class BillsTracker:
 
         if self.debug_log: print(f'Running {len(tasks)} tasks')
         await asyncio.gather(*tasks)
-        self.bills_first_polling = False

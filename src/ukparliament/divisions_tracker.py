@@ -2,7 +2,7 @@
 import asyncio
 from typing import Union
 import aiohttp
-from ukparliament.bills import SearchBillsBuilder
+from ukparliament.bills import SearchBillsBuilder, SearchBillsSortOrder
 from ukparliament.utils import BetterEnum
 from .structures.bills import Bill, LordsDivision, CommonsDivision
 
@@ -54,7 +54,7 @@ class DivisionsTracker:
     
     async def start_event_loop(self):
         async def main():
-            #asyncio.ensure_future(self._poll_commons())
+            asyncio.ensure_future(self._poll_commons())
             asyncio.ensure_future(self._poll_lords())
             await asyncio.sleep(30)
             await main()
@@ -69,10 +69,11 @@ class DivisionsTracker:
         bill = None
         if 'Bill' in title:
             bill_section = title.split("Bill")[0] + "Bill"
-            bills = await self.parliament.search_bills(url=SearchBillsBuilder.builder().set_search_term(bill_section).build())
+            bills = await self.parliament.search_bills(url=SearchBillsBuilder.builder().set_search_term(bill_section).set_sort_order(SearchBillsSortOrder.TITLE_DESENCING).build())
             if len(bills) > 0:
-                if bills[0].get_title().startswith(bill_section):
-                    bill = bills[0]
+                for b in bills:
+                    if b.get_title().startswith(bill_section):
+                        bill = b
 
         if bill is not None:
             has_been_stored_b = await self.storage.bill_division_stored(bill.get_bill_id(), division)

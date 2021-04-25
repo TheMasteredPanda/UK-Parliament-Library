@@ -38,7 +38,7 @@ async def _meta_bill_task(bill: Bill, instance, session: aiohttp.ClientSession =
 
 class SearchBillsSortOrder(utils.BetterEnum):
     TITLE_ASCENDING = 'TitleAscending'
-    TITLE_DESENCING = 'TitleDesending'
+    TITLE_DESENCING = 'TitleDescending'
     DATE_UPDATED_ASCENDING = 'DateUpdatedAscending'
     DATE_UPDATED_DESENDING = 'DateUpdatedDescending'
 
