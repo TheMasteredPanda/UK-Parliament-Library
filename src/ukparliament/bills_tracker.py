@@ -105,21 +105,21 @@ class Feed:
     rss_url:
         The rss url for an individual bill.
     storage:
-        The storage medium in which the update guids will be stored for 
+        The storage medium in which the update guids will be stored for
         each bill.
     '''
     def __init__(self, bill_url: str):
         self.bill_url = bill_url
         self.bill_id = self.bill_url.split('/')[-1]
         self.last_update = None
-        self.publications_last_update = datetime.now()
         self.rss_individual_url = f'https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss'
     
-    async def _poll_publications(self):
+    async def fetch_newest_publications(self, from_date: datetime = datetime.now(), update_limit: int = 20):
         '''
         Used to poll a bill for publication updates
         '''
         pass
+
 
     async def process_poll_item(self, json_object, debug_log: bool = False):
         '''
@@ -189,26 +189,18 @@ class TrackerListener:
 
 
 class BillsTracker:
-    def __init__(self, parliament, storage: BillsStorage,
-            bills_index_after: datetime = (datetime.now() - timedelta(days=7)),
-            publish_index_after: datetime = (datetime.now() - timedelta(days=2))):
+    def __init__(self, parliament, storage: BillsStorage):
         self.parliament = parliament
         self.feeds: list[Feed] = []
         self.storage = storage
         self.listeners: list[TrackerListener] = []
         self.publication_listeners = []
         self.last_update: Union[datetime, None] = None
-        self.debug_log = False
-        self.bills_index_after = bills_index_after
-        self.bills_first_polling = True
-        self.publish_index_after = publish_index_after
-        self.publish_first_polling = True
 
     # Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
     async def start_event_loop(self, testing: bool = False):
         async def main():
             await asyncio.ensure_future(self._poll())
-            asyncio.ensure_future(self._publication_poll())
             await asyncio.sleep(30)
             await main()
 
@@ -223,9 +215,6 @@ class BillsTracker:
             return
         is_stored = await self.storage.has_update_stored(feed.get_id(), update)
         if is_stored is True:
-            return
-
-        if (update.get_update_date().timestamp() < self.bills_index_after.timestamp()) and self.bills_first_polling:
             return
 
         for listener in self.listeners:
@@ -249,28 +238,10 @@ class BillsTracker:
     def register_publication(self, func):
         self.publication_listeners.append(func)
 
-    async def _publication_poll_task(self, feed: Feed, update: PublicationUpdate):
-        if await self.storage.has_publication_update(feed.get_id(), update):
-            return
-
-        async def _task(func, feed: Feed, update: PublicationUpdate):
-            await self.storage.add_publication_update(feed.get_id(), update)
-            await func(feed, update)
-
-        tasks = []
-
-        for listener in self.publication_listeners:
-            tasks.append(_task(listener, feed, update))
-
-        await asyncio.gather(*tasks)
-
-    async def _publication_poll(self):
-        pass
-
     # Polls the currently tracked feeds, creates new feeds that have not yet been tracked, and expires feeds
     # That have not been updated for at least two months.
 
-    async def _poll(self):
+    async def poll(self):
         tasks = []
         async with aiohttp.ClientSession() as session:
             async with session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
