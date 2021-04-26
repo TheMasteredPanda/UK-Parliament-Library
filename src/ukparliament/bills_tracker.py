@@ -1,3 +1,4 @@
+from aiohttp.client import ClientSession
 from bs4 import BeautifulSoup
 import asyncio
 import aiohttp
@@ -186,7 +187,8 @@ class TrackerListener:
 
 
 class BillsTracker:
-    def __init__(self, parliament, storage: BillsStorage):
+    def __init__(self, parliament, storage: BillsStorage, session: ClientSession):
+        self.session = session
         self.parliament = parliament
         self.feeds: list[Feed] = []
         self.storage = storage
@@ -240,33 +242,32 @@ class BillsTracker:
 
     async def poll(self):
         tasks = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
-                soup = BeautifulSoup(await resp.text(), features='lxml')
+        async with self.session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
+            soup = BeautifulSoup(await resp.text(), features='lxml')
 
-                rss_last_update = datetime.strptime(soup.rss.channel.lastbuilddate.text, '%a, %d %b %Y %H:%M:%S %z')
-                items = reversed(soup.rss.channel.find_all('item'))
+            rss_last_update = datetime.strptime(soup.rss.channel.lastbuilddate.text, '%a, %d %b %Y %H:%M:%S %z')
+            items = reversed(soup.rss.channel.find_all('item'))
 
-                if self.last_update is not None:
-                    if self.last_update.timestamp() >= rss_last_update.timestamp():
-                        return
+            if self.last_update is not None:
+                if self.last_update.timestamp() >= rss_last_update.timestamp():
+                    return
 
-                self.last_update = rss_last_update
+            self.last_update = rss_last_update
 
-                for item in items:
-                    bill_id = item.guid.text.split('/')[-1]  # type: ignore
-                    feed = None
-                    if item.guid.text in [f.get_bill_url() for f in self.feeds]:
-                        feed = self.get_feed(bill_id)
-                    else:
-                        feed = Feed(item.guid.text)
-                        self.feeds.append(feed)
+            for item in items:
+                bill_id = item.guid.text.split('/')[-1]  # type: ignore
+                feed = None
+                if item.guid.text in [f.get_bill_url() for f in self.feeds]:
+                    feed = self.get_feed(bill_id)
+                else:
+                    feed = Feed(item.guid.text)
+                    self.feeds.append(feed)
 
-                    if feed is None:
-                        continue
-                    tasks.append(self._poll_task(feed, item))
+                if feed is None:
+                    continue
+                tasks.append(self._poll_task(feed, item))
 
         await asyncio.gather(*tasks)
         self.bills_first_polling = False

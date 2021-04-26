@@ -1,4 +1,5 @@
 from threading import Lock
+from aiohttp.client import ClientSession
 from cachetools import TTLCache
 from typing import Union
 from .structures.members import Party, PartyMember, ElectionResult, PartyMemberBiography, VotingEntry
@@ -11,7 +12,6 @@ from . import utils
 from .bills import division_task
 import asyncio
 import aiohttp
-from .https_client import HTTPSClient
 
 '''
 ---------------------------------------------------------
@@ -26,7 +26,8 @@ index unnecessary data.
 
 
 class UKParliament:
-    def __init__(self):
+    def __init__(self, session: ClientSession):
+        self.session = session
         self.parties: list[Party] = []
         self.bill_types: list[BillType] = []
         self.bill_stages: list[BillStage] = []
@@ -48,9 +49,9 @@ class UKParliament:
         self.election_results_lock = Lock()
         self.bills_tracker = None
         self.divisions_tracker = None
-        self.h
+
     def start_bills_tracker(self, storage: BillsStorage):
-        self.bills_tracker = BillsTracker(self, storage)
+        self.bills_tracker = BillsTracker(self, storage, self.session)
 
     async def load_bills_tracker(self):
         if self.bills_tracker is None:
@@ -72,63 +73,61 @@ class UKParliament:
         return self.divisions_tracker
 
     async def load(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Commons') as resp:
-                if resp.status != 200:
-                    raise Exception("Couldn't fetch active parties in the House of Commons")
-                content = await resp.json()
+        async with self.session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Commons') as resp:
+            if resp.status != 200:
+                raise Exception("Couldn't fetch active parties in the House of Commons")
+            content = await resp.json()
 
-                for item in content['items']:
-                    self.parties.append(Party(item))
+            for item in content['items']:
+                self.parties.append(Party(item))
 
-            async with session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Lords') as resp:
-                if resp.status != 200:
-                    raise Exception("Couldn't fetch active parties in the House of Lords")
+        async with self.session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Lords') as resp:
+            if resp.status != 200:
+                raise Exception("Couldn't fetch active parties in the House of Lords")
 
-                content = await resp.json()
+            content = await resp.json()
 
-                for item in content['items']:
-                    party = self.get_party_by_id(item['value']['id'])
-                    if party is None:
-                        self.parties.append(Party(item))
-                    else:
-                        party.set_lords_party()
-            json_party_members = await utils.load_data(f'{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true',
-                    session)
-            for json_member in json_party_members:
-                member = PartyMember(json_member)
-                party = self.get_party_by_id(member.get_party_id())
-
+            for item in content['items']:
+                party = self.get_party_by_id(item['value']['id'])
                 if party is None:
-                    print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party"
-                            f" under apparent id {member.get_party_id()}")
-                    continue
+                    self.parties.append(Party(item))
+                else:
+                    party.set_lords_party()
+        json_party_members = await utils.load_data(f'{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true',
+                self.session)
+        for json_member in json_party_members:
+            member = PartyMember(json_member)
+            party = self.get_party_by_id(member.get_party_id())
 
-                party.add_member(member)
+            if party is None:
+                print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party"
+                        f" under apparent id {member.get_party_id()}")
+                continue
 
-            async with session.get(f'{utils.URL_BILLS}/BillTypes') as bt_resp:
-                if bt_resp.status != 200:
-                    raise Exception(f"Couldn't fetch bill types. Status Code: {bt_resp.status}")
+            party.add_member(member)
 
-                content = await bt_resp.json()
+        async with self.session.get(f'{utils.URL_BILLS}/BillTypes') as bt_resp:
+            if bt_resp.status != 200:
+                raise Exception(f"Couldn't fetch bill types. Status Code: {bt_resp.status}")
 
-                for item in content['items']:
-                    self.bill_types.append(BillType(item))
+            content = await bt_resp.json()
 
-            json_bill_stages = await utils.load_data(f'{utils.URL_BILLS}/Stages', session)
+            for item in content['items']:
+                self.bill_types.append(BillType(item))
 
-            for json_bill_stage in json_bill_stages:
-                self.bill_stages.append(BillStage(json_bill_stage))
+        json_bill_stages = await utils.load_data(f'{utils.URL_BILLS}/Stages', self.session)
+
+        for json_bill_stage in json_bill_stages:
+            self.bill_stages.append(BillStage(json_bill_stage))
 
     async def get_biography(self, member: PartyMember) -> PartyMemberBiography:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as\
-                    bio_resp:
-                if bio_resp.status != 200:
-                    raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}."
-                            f" Status Code: {bio_resp.status}")
-                bio_content = await bio_resp.json()
-                return PartyMemberBiography(bio_content)
+        async with self.session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as\
+                bio_resp:
+            if bio_resp.status != 200:
+                raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}."
+                        f" Status Code: {bio_resp.status}")
+            bio_content = await bio_resp.json()
+            return PartyMemberBiography(bio_content)
 
     async def get_election_results(self, member: PartyMember) -> list[ElectionResult]:
         with self.election_results_lock:
@@ -136,13 +135,12 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            election_result = await asyncio.gather(er_task(member, session))
-            elections = election_result[0]
+        election_result = await asyncio.gather(er_task(member, self.session))
+        elections = election_result[0]
 
-            with self.election_results_lock:
-                self.election_results_cache[member._get_membership_from_id()] = elections
-            return elections  # type: ignore
+        with self.election_results_lock:
+            self.election_results_cache[member._get_membership_from_id()] = elections
+        return elections  # type: ignore
 
     async def get_voting_history(self, member: PartyMember) -> list[VotingEntry]:
         with self.voting_history_lock:
@@ -205,13 +203,12 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_MEMBERS}/Members/{member_id}") as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't lazily load member under id {member_id}. Status Code: {resp.status}.")
-                content = await resp.json()
-                member = PartyMember(content)
-                return member
+        async with self.session.get(f"{utils.URL_MEMBERS}/Members/{member_id}") as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't lazily load member under id {member_id}. Status Code: {resp.status}.")
+            content = await resp.json()
+            member = PartyMember(content)
+            return member
 
     def get_bill_stages(self):
         return self.bill_stages
@@ -225,17 +222,16 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_BILLS}/Bills/{bill_id}") as resp:
-                if resp.status != 200:
-                    raise Exception(f"Failed to fetch bill under id {bill_id}")
-                content = await resp.json()
-                bill = Bill(content)
-                await _meta_bill_task(bill, self, session)
+        async with self.session.get(f"{utils.URL_BILLS}/Bills/{bill_id}") as resp:
+            if resp.status != 200:
+                raise Exception(f"Failed to fetch bill under id {bill_id}")
+            content = await resp.json()
+            bill = Bill(content)
+            await _meta_bill_task(bill, self, self.session)
 
-                with self.bills_cache_lock:
-                    self.bills_cache[bill_id] = bill
-                return bill
+            with self.bills_cache_lock:
+                self.bills_cache[bill_id] = bill
+            return bill
 
     async def search_bills(self, url: str) -> list[Bill]:
         with self.bill_search_cache_lock:
@@ -243,21 +239,20 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch bills with url: {url}. Status Code: {resp.status}")
+        async with self.session.get(url) as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch bills with url: {url}. Status Code: {resp.status}")
 
-                content = await resp.json()
-                bills = []
+            content = await resp.json()
+            bills = []
 
-                extra_bill_information_tasks = []
+            extra_bill_information_tasks = []
 
-                for item in content['items']:
-                    bill = Bill(item)
-                    extra_bill_information_tasks.append(_meta_bill_task(bill, self, session))
-                    bills.append(bill)
-                await asyncio.gather(*extra_bill_information_tasks)
+            for item in content['items']:
+                bill = Bill(item)
+                extra_bill_information_tasks.append(_meta_bill_task(bill, self, self.session))
+                bills.append(bill)
+            await asyncio.gather(*extra_bill_information_tasks)
 
             with self.bill_search_cache_lock:
                 self.bill_search_cache[url] = bills
@@ -269,18 +264,17 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}.json") as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
-                content = await resp.json()
+        async with self.session.get(f"{utils.URL_COMMONS_VOTES}/division/{division_id}.json") as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
+            content = await resp.json()
 
-                division = CommonsDivision(content)
-                await self._populate_commons_division(division)
+            division = CommonsDivision(content)
+            await self._populate_commons_division(division)
 
-                with self.division_cache_lock:
-                    self.division_cache[division_id] = division
-                return division
+            with self.division_cache_lock:
+                self.division_cache[division_id] = division
+            return division
 
     async def get_lords_division(self, division_id: int):
         with self.division_cache_lock:
@@ -288,16 +282,15 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/{division_id}") as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
-                content = await resp.json()
-                division = LordsDivision(content)
-                await self._populate_lords_division(division)
-                with self.division_cache_lock:
-                    self.division_cache[division_id] = division
-                return division
+        async with self.session.get(f"{utils.URL_LORDS_VOTES}/Divisions/{division_id}") as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch division {division_id}. Status Code: {resp.status}")
+            content = await resp.json()
+            division = LordsDivision(content)
+            await self._populate_lords_division(division)
+            with self.division_cache_lock:
+                self.division_cache[division_id] = division
+            return division
 
     async def search_for_lords_divisions(self, search_term: str = '', result_limit: int = -1) -> list[LordsDivision]:
         with self.division_search_lords_lock:
@@ -305,31 +298,30 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults"
-                    f"?SearchTerm={formatted_search_term}" if search_term != '' else '') as resp:
-                if resp.status != 200:
-                    raise Exception("Couldn't fetch total search results for division search with query: "
-                                    f"{search_term}. Status Code: {resp.status}")
+        formatted_search_term = "%20".join(search_term.split(' '))
+        async with self.session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults"
+                f"?SearchTerm={formatted_search_term}" if search_term != '' else '') as resp:
+            if resp.status != 200:
+                raise Exception("Couldn't fetch total search results for division search with query: "
+                                f"{search_term}. Status Code: {resp.status}")
 
-                total_seach_results = await resp.json()
-                division_items = await utils.load_data(
-                        f"{utils.URL_LORDS_VOTES}/Divisions/search"
-                        f"?SearchTerm={formatted_search_term}" if search_term != '' else '',
-                        session,
-                        total_seach_results if result_limit == -1 else result_limit)
+            total_seach_results = await resp.json()
+            division_items = await utils.load_data(
+                    f"{utils.URL_LORDS_VOTES}/Divisions/search"
+                    f"?SearchTerm={formatted_search_term}" if search_term != '' else '',
+                    self.session,
+                    total_seach_results if result_limit == -1 else result_limit)
 
-                divisions = []
+            divisions = []
 
-                for item in division_items:
-                    division = LordsDivision(item)
-                    await self._populate_lords_division(division)
-                    divisions.append(division)
+            for item in division_items:
+                division = LordsDivision(item)
+                await self._populate_lords_division(division)
+                divisions.append(division)
 
-                with self.division_search_lords_lock:
-                    self.division_search_lords_cache[search_term.lower()] = divisions
-                return divisions
+            with self.division_search_lords_lock:
+                self.division_search_lords_cache[search_term.lower()] = divisions
+            return divisions
 
     async def search_for_commons_divisions(self, search_term: str = "",
             result_limit: int = -1) -> list[CommonsDivision]:
@@ -338,28 +330,27 @@ class UKParliament:
             if cached_obj is not None:
                 return cached_obj
 
-        async with aiohttp.ClientSession() as session:
-            formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults"
-                    f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '') as resp:
-                if resp.status != 200:
-                    raise Exception(f"Couldn't fetch total search results for division search with query:"
-                            f" '{search_term}'. Status Code: {resp.status}")
+        formatted_search_term = "%20".join(search_term.split(' '))
+        async with self.session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults"
+                f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '') as resp:
+            if resp.status != 200:
+                raise Exception(f"Couldn't fetch total search results for division search with query:"
+                        f" '{search_term}'. Status Code: {resp.status}")
 
-                total_search_results = await resp.json()
-                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search"
-                        f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '',
-                        session,
-                        total_search_results if result_limit == -1 else result_limit)
-                divisions = []
-                for item in division_items:
-                    division = CommonsDivision(item)
-                    await self._populate_commons_division(division)
-                    divisions.append(division)
+            total_search_results = await resp.json()
+            division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search"
+                    f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '',
+                    self.session,
+                    total_search_results if result_limit == -1 else result_limit)
+            divisions = []
+            for item in division_items:
+                division = CommonsDivision(item)
+                await self._populate_commons_division(division)
+                divisions.append(division)
 
-                with self.division_search_commons_lock:
-                    self.division_search_commons_cache[search_term.lower()] = divisions
-                return divisions
+            with self.division_search_commons_lock:
+                self.division_search_commons_cache[search_term.lower()] = divisions
+            return divisions
 
     def get_parties(self) -> list[Party]:
         return self.parties

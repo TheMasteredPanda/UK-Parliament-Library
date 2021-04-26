@@ -12,14 +12,14 @@ async def division_task(instance, m_id, member_list: list[PartyMember]):
     member_list.append(member)
 
 
-async def _meta_bill_task(bill: Bill, instance, session: aiohttp.ClientSession = None):
+async def _meta_bill_task(bill: Bill, instance, session: aiohttp.ClientSession):
     for stage in instance.get_bill_stages():
         if bill.get_current_stage() == stage.get_stage_id():
             bill.set_current_stage(stage)
             break
 
     url = f"{utils.URL_BILLS}/Bills/{bill.get_bill_id()}"
-    async with session.get(url) if session is not None else aiohttp.ClientSession().get(url) as resp:
+    async with session.get(url) as resp:
         if resp.status != 200:
             raise Exception(f"Couldn't fetch information for from url: '{resp.url}'/{bill.get_title()}."
                     f" Status Code: {resp.status}")
@@ -55,7 +55,7 @@ class SearchBillsBuilder():
     @classmethod
     def builder(cls):
         return cls()
-    
+
     def set_search_term(self, search_term: str):
         self.bits.append(f'SearchTerm={"%20".join(search_term.split(" "))}')
         return self

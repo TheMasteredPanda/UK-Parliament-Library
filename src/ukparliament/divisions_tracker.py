@@ -8,7 +8,7 @@ from .structures.bills import LordsDivision, CommonsDivision
 class DivisionStorage:
     async def add_division(self, division: Union[LordsDivision, CommonsDivision]):
         '''
-        Used to store division information that is not related to a bill. 
+        Used to store division information that is not related to a bill.
         '''
         pass
 
@@ -20,7 +20,7 @@ class DivisionStorage:
 
     async def division_stored(self, division: Union[LordsDivision, CommonsDivision]):
         '''
-        Used to check if a division that is not related to a bill has been stored. 
+        Used to check if a division that is not related to a bill has been stored.
         '''
         pass
 
@@ -45,13 +45,13 @@ class DivisionsTracker:
         self.last_update = None
         self.storage = storage
         pass
-    
+
     def register(self, func, commons_listener: bool = True):
         if commons_listener:
             self.commons_listeners.append(func)
         else:
             self.lords_listeners.append(func)
-    
+
     async def start_event_loop(self):
         async def main():
             asyncio.ensure_future(self.poll_commons())
