@@ -1,11 +1,9 @@
 from bs4 import BeautifulSoup
 import asyncio
 import aiohttp
-import dateparser
 from typing import Any, Union
 from .utils import BetterEnum
 from datetime import datetime
-from datetime import timedelta
 
 
 class FeedUpdate:
@@ -47,7 +45,7 @@ class PublicationUpdate:
         self._category = publication_update.category.text
         self._title = publication_update.title.text
         self._description = publication_update.description.text
-        self._publication_date = dateparser.parse(publication_update.pubdate.text)
+        self._publication_date = datetime.strptime(publication_update.pubdate.text, '%a, %d %b %Y %H:%M:%S %z')
 
     def get_guid(self):
         return self._guid
@@ -119,7 +117,6 @@ class Feed:
         Used to poll a bill for publication updates
         '''
         pass
-
 
     async def process_poll_item(self, json_object, debug_log: bool = False):
         '''
@@ -200,7 +197,7 @@ class BillsTracker:
     # Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
     async def start_event_loop(self, testing: bool = False):
         async def main():
-            await asyncio.ensure_future(self._poll())
+            await asyncio.ensure_future(self.poll())
             await asyncio.sleep(30)
             await main()
 
@@ -249,7 +246,7 @@ class BillsTracker:
                     raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
                 soup = BeautifulSoup(await resp.text(), features='lxml')
 
-                rss_last_update = dateparser.parse(soup.rss.channel.lastbuilddate.text)
+                rss_last_update = datetime.strptime(soup.rss.channel.lastbuilddate.text, '%a, %d %b %Y %H:%M:%S %z')
                 items = reversed(soup.rss.channel.find_all('item'))
 
                 if self.last_update is not None:
