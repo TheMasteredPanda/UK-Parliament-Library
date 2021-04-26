@@ -1,5 +1,4 @@
 from threading import Lock
-from aiohttp.client import ClientSession
 from cachetools import TTLCache
 from typing import Union
 from .structures.members import Party, PartyMember, ElectionResult, PartyMemberBiography, VotingEntry
@@ -7,25 +6,23 @@ from .members import er_task, vh_task
 from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
 from .bills_tracker import BillsTracker, BillsStorage
 from .divisions_tracker import DivisionsTracker, DivisionStorage
-from . import bills
 from .bills import _meta_bill_task
 from . import utils
 from .bills import division_task
-import time
 import asyncio
-import json
 import aiohttp
 
 '''
 ---------------------------------------------------------
-A Python Interface for the UK Parliament Rest API. 
+A Python Interface for the UK Parliament Rest API.
 
 The central point of contact is the UKParliament class,
 each instance can index data from one election onwards,
 until the date of the next election - this is to not
-index unnecessary data. 
+index unnecessary data.
 ---------------------------------------------------------
 '''
+
 
 class UKParliament:
     def __init__(self):
@@ -55,7 +52,8 @@ class UKParliament:
         self.bills_tracker = BillsTracker(self, storage)
 
     async def load_bills_tracker(self):
-        if self.bills_tracker is None: return
+        if self.bills_tracker is None:
+            return
         await self.bills_tracker.start_event_loop()
 
     def get_bills_tracker(self) -> Union[BillsTracker, None]:
@@ -65,14 +63,15 @@ class UKParliament:
         self.divisions_tracker = DivisionsTracker(self, storage)
 
     async def load_divisions_tracker(self):
-       if self.divisions_tracker is None: return
-       await self.divisions_tracker.start_event_loop()
+        if self.divisions_tracker is None:
+            return
+        await self.divisions_tracker.start_event_loop()
 
     def get_divisions_tracker(self):
         return self.divisions_tracker
 
     async def load(self):
-        async with aiohttp.ClientSession() as session: 
+        async with aiohttp.ClientSession() as session:
             async with session.get(f'{utils.URL_MEMBERS}/Parties/GetActive/Commons') as resp:
                 if resp.status != 200:
                     raise Exception("Couldn't fetch active parties in the House of Commons")
@@ -92,14 +91,16 @@ class UKParliament:
                     if party is None:
                         self.parties.append(Party(item))
                     else:
-                        party._set_lords_party()
-            json_party_members = await utils.load_data(f'{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true', session)
+                        party.set_lords_party()
+            json_party_members = await utils.load_data(f'{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true',
+                    session)
             for json_member in json_party_members:
                 member = PartyMember(json_member)
-                party = self.get_party_by_id(member._get_party_id())
+                party = self.get_party_by_id(member.get_party_id())
 
                 if party is None:
-                    print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party under apparent id {member._get_party_id()}")
+                    print(f"Couldn't add member {member.get_titled_name()}/{member.get_id()} to party"
+                            f" under apparent id {member.get_party_id()}")
                     continue
 
                 party.add_member(member)
@@ -112,18 +113,19 @@ class UKParliament:
 
                 for item in content['items']:
                     self.bill_types.append(BillType(item))
-                
+
             json_bill_stages = await utils.load_data(f'{utils.URL_BILLS}/Stages', session)
 
             for json_bill_stage in json_bill_stages:
                 self.bill_stages.append(BillStage(json_bill_stage))
 
-
     async def get_biography(self, member: PartyMember) -> PartyMemberBiography:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as bio_resp:
+            async with session.get(f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography") as\
+                    bio_resp:
                 if bio_resp.status != 200:
-                    raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}. Status Code: {bio_resp.status}")
+                    raise Exception(f"Couldn't load member bio of {member.get_id()}/{member.get_listed_name()}."
+                            f" Status Code: {bio_resp.status}")
                 bio_content = await bio_resp.json()
                 return PartyMemberBiography(bio_content)
 
@@ -139,8 +141,7 @@ class UKParliament:
 
             with self.election_results_lock:
                 self.election_results_cache[member._get_membership_from_id()] = elections
-            return elections #type: ignore
-
+            return elections  # type: ignore
 
     async def get_voting_history(self, member: PartyMember) -> list[VotingEntry]:
         with self.voting_history_lock:
@@ -196,8 +197,8 @@ class UKParliament:
                 return member
         return None
 
-    #Cheap Workaround to using a cache, something I'll implement later
-    async def _lazy_load_member(self, member_id: int) -> PartyMember:
+    # Cheap Workaround to using a cache, something I'll implement later
+    async def lazy_load_member(self, member_id: int) -> PartyMember:
         with self.old_member_cache_lock:
             cached_obj = self.old_member_cache.get(member_id)
             if cached_obj is not None:
@@ -227,7 +228,7 @@ class UKParliament:
             async with session.get(f"{utils.URL_BILLS}/Bills/{bill_id}") as resp:
                 if resp.status != 200:
                     raise Exception(f"Failed to fetch bill under id {bill_id}")
-                content =  await resp.json()
+                content = await resp.json()
                 bill = Bill(content)
                 await _meta_bill_task(bill, self, session)
 
@@ -256,7 +257,7 @@ class UKParliament:
                     extra_bill_information_tasks.append(_meta_bill_task(bill, self, session))
                     bills.append(bill)
                 await asyncio.gather(*extra_bill_information_tasks)
-            
+
             with self.bill_search_cache_lock:
                 self.bill_search_cache[url] = bills
             return bills
@@ -279,7 +280,7 @@ class UKParliament:
                 with self.division_cache_lock:
                     self.division_cache[division_id] = division
                 return division
-    
+
     async def get_lords_division(self, division_id: int):
         with self.division_cache_lock:
             cached_obj = self.division_cache.get(division_id)
@@ -297,7 +298,6 @@ class UKParliament:
                     self.division_cache[division_id] = division
                 return division
 
-
     async def search_for_lords_divisions(self, search_term: str = '', result_limit: int = -1) -> list[LordsDivision]:
         with self.division_search_lords_lock:
             cached_obj = self.division_search_lords_cache.get(search_term.lower())
@@ -306,12 +306,18 @@ class UKParliament:
 
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults" + (f"?SearchTerm={formatted_search_term}" if search_term != '' else '')) as resp:
+            async with session.get(f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults"
+                    f"?SearchTerm={formatted_search_term}" if search_term != '' else '') as resp:
                 if resp.status != 200:
-                    raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}. Status Code: {resp.status}")
+                    raise Exception("Couldn't fetch total search results for division search with query: "
+                                    f"{search_term}. Status Code: {resp.status}")
 
                 total_seach_results = await resp.json()
-                division_items = await utils.load_data(f"{utils.URL_LORDS_VOTES}/Divisions/search" + (f"?SearchTerm={formatted_search_term}" if search_term != '' else ''), session, total_seach_results if result_limit == -1 else result_limit)
+                division_items = await utils.load_data(
+                        f"{utils.URL_LORDS_VOTES}/Divisions/search"
+                        f"?SearchTerm={formatted_search_term}" if search_term != '' else '',
+                        session,
+                        total_seach_results if result_limit == -1 else result_limit)
 
                 divisions = []
 
@@ -319,29 +325,34 @@ class UKParliament:
                     division = LordsDivision(item)
                     await self._populate_lords_division(division)
                     divisions.append(division)
-                
+
                 with self.division_search_lords_lock:
                     self.division_search_lords_cache[search_term.lower()] = divisions
                 return divisions
 
-    async def search_for_commons_divisions(self, search_term: str = "", result_limit: int = -1) -> list[CommonsDivision]:
+    async def search_for_commons_divisions(self, search_term: str = "",
+            result_limit: int = -1) -> list[CommonsDivision]:
         with self.division_search_commons_lock:
             cached_obj = self.division_search_commons_cache.get(search_term.lower())
             if cached_obj is not None:
                 return cached_obj
 
-
         async with aiohttp.ClientSession() as session:
             formatted_search_term = "%20".join(search_term.split(' '))
-            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults" + (f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '')) as resp:
+            async with session.get(f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults"
+                    f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '') as resp:
                 if resp.status != 200:
-                    raise Exception(f"Couldn't fetch total search results for division search with query: '{search_term}'. Status Code: {resp.status}")
-                
+                    raise Exception(f"Couldn't fetch total search results for division search with query:"
+                            f" '{search_term}'. Status Code: {resp.status}")
+
                 total_search_results = await resp.json()
-                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search" + (f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else ''), session, total_search_results if result_limit == -1 else result_limit)
+                division_items = await utils.load_data(f"{utils.URL_COMMONS_VOTES}/divisions.json/search"
+                        f"?queryParameters.searchTerm={formatted_search_term}" if search_term != '' else '',
+                        session,
+                        total_search_results if result_limit == -1 else result_limit)
                 divisions = []
                 for item in division_items:
-                    division = CommonsDivision(item) 
+                    division = CommonsDivision(item)
                     await self._populate_commons_division(division)
                     divisions.append(division)
 
@@ -354,40 +365,47 @@ class UKParliament:
 
     async def _populate_lords_division(self, division: LordsDivision):
         aye_tellers = []
-        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers), division._get_aye_teller_ids()))
+        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers),
+            division.get_aye_teller_ids()))
         await asyncio.gather(*a_teller_tasks)
-        division._set_aye_tellers(aye_tellers)
+        division.set_aye_tellers(aye_tellers)
         no_tellers = []
-        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers), division._get_no_teller_ids()))
+        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers),
+            division.get_no_teller_ids()))
         await asyncio.gather(*n_teller_tasks)
-        division._set_no_tellers(no_tellers)
+        division.set_no_tellers(no_tellers)
         no_members = []
-        n_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members), division._get_no_vote_member_ids()))
+        n_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members),
+            division.get_no_vote_member_ids()))
         await asyncio.gather(*n_members_tasks)
-        division._set_no_members(no_members)
+        division.set_no_members(no_members)
 
         aye_members = []
-        a_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members), division._get_aye_vote_member_ids()))
+        a_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members),
+            division.get_aye_vote_member_ids()))
         await asyncio.gather(*a_members_tasks)
-        division._set_aye_members(aye_members)
-
+        division.set_aye_members(aye_members)
 
     async def _populate_commons_division(self, division: CommonsDivision):
         aye_tellers = []
-        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers), division._get_aye_teller_ids()))
+        a_teller_tasks = list(map(lambda teller: division_task(self, teller, aye_tellers),
+            division.get_aye_teller_ids()))
         await asyncio.gather(*a_teller_tasks)
-        division._set_aye_members(aye_tellers)
+        division.set_aye_members(aye_tellers)
 
         no_tellers = []
-        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers), division._get_no_teller_ids()))
+        n_teller_tasks = list(map(lambda teller: division_task(self, teller, no_tellers),
+            division.get_no_teller_ids()))
         await asyncio.gather(*n_teller_tasks)
-        
+
         aye_members = []
-        aye_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members), division._get_aye_member_ids()))
+        aye_members_tasks = list(map(lambda member_id: division_task(self, member_id, aye_members),
+            division.get_aye_member_ids()))
         await asyncio.gather(*aye_members_tasks)
-        division._set_aye_members(aye_members)
+        division.set_aye_members(aye_members)
 
         no_members = []
-        no_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members), division._get_no_member_ids()))
+        no_members_tasks = list(map(lambda member_id: division_task(self, member_id, no_members),
+            division.get_no_member_ids()))
         await asyncio.gather(*no_members_tasks)
-        division._set_no_members(no_members)
+        division.set_no_members(no_members)

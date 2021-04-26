@@ -1,10 +1,9 @@
 
 import asyncio
 from typing import Union
-import aiohttp
 from ukparliament.bills import SearchBillsBuilder, SearchBillsSortOrder
-from ukparliament.utils import BetterEnum
-from .structures.bills import Bill, LordsDivision, CommonsDivision
+from .structures.bills import LordsDivision, CommonsDivision
+
 
 class DivisionStorage:
     async def add_division(self, division: Union[LordsDivision, CommonsDivision]):
@@ -37,6 +36,7 @@ class DivisionStorage:
         '''
         pass
 
+
 class DivisionsTracker:
     def __init__(self, parliament, storage: DivisionStorage):
         self.parliament = parliament
@@ -54,22 +54,24 @@ class DivisionsTracker:
     
     async def start_event_loop(self):
         async def main():
-            asyncio.ensure_future(self._poll_commons())
-            asyncio.ensure_future(self._poll_lords())
+            asyncio.ensure_future(self.poll_commons())
+            asyncio.ensure_future(self.poll_lords())
             await asyncio.sleep(30)
             await main()
         await main()
 
-
-    async def _division_task(self, division_id: int, lords_division: bool = False):
-        division = await self.parliament.get_lords_division(division_id) if lords_division else await self.parliament.get_commons_division(division_id)
+    async def division_task(self, division_id: int, lords_division: bool = False):
+        division = await self.parliament.get_lords_division(division_id) if lords_division else \
+                await self.parliament.get_commons_division(division_id)
         has_been_stored = await self.storage.division_stored(division)
-        if has_been_stored: return
-        title = division.get_division_title() 
+        if has_been_stored:
+            return
+        title = division.get_division_title()
         bill = None
         if 'Bill' in title:
             bill_section = title.split("Bill")[0] + "Bill"
-            bills = await self.parliament.search_bills(url=SearchBillsBuilder.builder().set_search_term(bill_section).set_sort_order(SearchBillsSortOrder.TITLE_DESENCING).build())
+            bills = await self.parliament.search_bills(url=SearchBillsBuilder.builder().set_search_term(bill_section)
+                    .set_sort_order(SearchBillsSortOrder.TITLE_DESENCING).build())
             if len(bills) > 0:
                 for b in bills:
                     if b.get_title().startswith(bill_section):
@@ -77,8 +79,8 @@ class DivisionsTracker:
 
         if bill is not None:
             has_been_stored_b = await self.storage.bill_division_stored(bill.get_bill_id(), division)
-            if has_been_stored_b: return
-
+            if has_been_stored_b:
+                return
 
         if bill is not None:
             await self.storage.add_bill_division(bill.get_bill_id(), division)
@@ -92,19 +94,19 @@ class DivisionsTracker:
 
         await asyncio.gather(*listener_tasks)
 
-    async def _poll_commons(self):
+    async def poll_commons(self):
         divisions = await self.parliament.search_for_commons_divisions(result_limit=10)
 
         tasks = []
         for division in divisions:
-            tasks.append(self._division_task(division.get_id(), False))
+            tasks.append(self.division_task(division.get_id(), False))
         await asyncio.gather(*tasks)
 
-    async def _poll_lords(self):
+    async def poll_lords(self):
         divisions: list[LordsDivision] = await self.parliament.search_for_lords_divisions(result_limit=10)
         divisions.reverse()
 
         tasks = []
         for division in divisions:
-            tasks.append(self._division_task(division.get_id(), True))
+            tasks.append(self.division_task(division.get_id(), True))
         await asyncio.gather(*tasks)
