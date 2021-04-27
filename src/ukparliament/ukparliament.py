@@ -66,9 +66,10 @@ class UKParliament:
     def start_publications_tracker(
         self, tracker: BillsTracker, *, pffl: int = 1, index_from: datetime = None
     ):
-        self.publications_tracker = PublicationsTracker(
-            tracker, pffl=pffl, index_from=index_from
-        )
+        self.publications_tracker = PublicationsTracker(tracker)
+
+    def get_publications_tracker(self):
+        return self.publications_tracker
 
     def start_bills_tracker(self, storage: BillsStorage):
         self.bills_tracker = BillsTracker(self, storage, self.session)

@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import asyncio
 from typing import Any, Union
 from .utils import BetterEnum
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class FeedUpdate:
@@ -22,8 +22,11 @@ class FeedUpdate:
         self._description = feed_update_object.description.text.replace(
             "<description>", ""
         ).replace("</description>", "")
-        self._updated = datetime.strptime(
-            feed_update_object.find("a10:updated").text, "%a, %d %b %Y %H:%M:%S %z"
+        updated_string_date = feed_update_object.find("a10:updated").text
+        self._updated = (
+            datetime.strptime(updated_string_date, "%Y-%m-%dT%H:%M:%SZ")
+            if "Z" in updated_string_date
+            else datetime.fromisoformat(updated_string_date)
         )
 
     def get_bill_id(self):
@@ -122,13 +125,15 @@ class Feed:
         self.bill_url = bill_url
         self.bill_id = self.bill_url.split("/")[-1]
         self.last_update = None
+        self.last_publication_update = None
         self.rss_individual_url = (
             f"https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss"
         )
         self.session = session
 
     async def fetch_newest_publications(
-        self, from_date: datetime = datetime.now(), update_limit: int = 20
+        self,
+        update_limit: int = 20,
     ):
         """
         Used to poll a bill for publication updates
@@ -138,19 +143,24 @@ class Feed:
                 raise Exception(
                     f"Couldn't fetch individual bill rss feed for bill {self.bill_id}. Status Code: {resp.status}"
                 )
-            soup = BeautifulSoup(await resp.text())
+
+            soup = BeautifulSoup(await resp.text(), features="lxml")
             rss_last_update = datetime.strptime(
                 soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
             )
 
-            if rss_last_update.timestamp() < from_date.timestamp():
-                return
+            if self.last_publication_update is not None:
+                if self.last_publication_update >= rss_last_update:
+                    return []
 
             results = []
-            for item in soup.rss.channel.find_all("items"):
+            for item in soup.rss.channel.find_all("item"):
                 update = PublicationUpdate(item)
-
-                if update.get_publication().timestamp() < from_date.timestamp():
+                if (
+                    self.last_publication_update is not None
+                    and update.get_publication().timestamp()
+                    < self.last_publication_update.timestamp()
+                ):
                     break
 
                 if len(results) >= update_limit:
@@ -158,6 +168,7 @@ class Feed:
 
                 results.append(update)
 
+            self.last_publication_update = rss_last_update
             return results
 
     async def process_poll_item(self, json_object):
@@ -249,6 +260,7 @@ class BillsTracker:
 
     async def start_event_loop(self):
         async def main():
+
             await asyncio.ensure_future(self.poll())
             await asyncio.sleep(30)
             await main()
@@ -303,11 +315,11 @@ class BillsTracker:
             )
             items = reversed(soup.rss.channel.find_all("item"))
 
-            if self.last_update is not None:
-                if self.last_update.timestamp() >= rss_last_update.timestamp():
+            if self._last_update is not None:
+                if self._last_update.timestamp() >= rss_last_update.timestamp():
                     return
 
-            self.last_update = rss_last_update
+            self._last_update = rss_last_update
 
             for item in items:
                 bill_id = item.guid.text.split("/")[-1]  # type: ignore
@@ -334,7 +346,7 @@ class PublicationsTracker:
         self,
         tracker: BillsTracker,
         *,
-        pffl: int = 5,
+        pffl: int = 1,
         index_from: datetime = None,
     ):
         self._tracker = tracker
@@ -362,30 +374,34 @@ class PublicationsTracker:
         async def _task(update: PublicationUpdate, func):
             await func(update)
 
+        fetch_tasks = []
+        tasks = []
+
         for feed in self._tracker.get_feeds():
-            updates = feed.fetch_newest_publications(
-                self._index_from
-                if (self._index_from is not None and self._first_index is True)
-                else None,  # type: ignore
-                self._load_per_feed_fetch_limit if self._first_index is True else -1,
-            )
 
-            tasks = []
-
-            for update in updates:
-                if self._tracker.get_storage().has_publication_update(
-                    feed.get_id(), update
-                ):
-                    continue
-
-                await self._tracker.get_storage().add_publication_update(
-                    feed.get_id(), update
+            async def _fetch_task(feed: Feed):
+                updates = await feed.fetch_newest_publications(
+                    update_limit=self._load_per_feed_fetch_limit
                 )
-                for listener in self.listeners:
-                    tasks.append(_task(listener, update))
 
-            self._last_polled = datetime.now()
-            await asyncio.gather(*tasks)
+                if len(updates) > 0:
+                    for update in updates:
+                        if await self._tracker.get_storage().has_publication_update(
+                            feed.get_id(), update
+                        ):
+                            continue
+
+                        await self._tracker.get_storage().add_publication_update(
+                            feed.get_id(), update
+                        )
+                        for listener in self.listeners:
+                            tasks.append(_task(update, listener))
+
+            fetch_tasks.append(_fetch_task(feed))
+
+        self._last_polled = datetime.now()
+        await asyncio.gather(*fetch_tasks)
+        await asyncio.gather(*tasks)
 
 
 async def dual_event_loop(b_tracker: BillsTracker, p_tracker: PublicationsTracker):
