@@ -346,14 +346,12 @@ class PublicationsTracker:
         self,
         tracker: BillsTracker,
         *,
-        pffl: int = 1,
-        index_from: datetime = None,
+        pffl: int = 10,
     ):
         self._tracker = tracker
         self._last_polled = None
         self._load_per_feed_fetch_limit = pffl
-        self._index_from = index_from
-        self._first_index = False
+        self._first_index = True
         self.listeners = []
 
     def register(self, listener_func):
@@ -380,8 +378,12 @@ class PublicationsTracker:
         for feed in self._tracker.get_feeds():
 
             async def _fetch_task(feed: Feed):
-                updates = await feed.fetch_newest_publications(
-                    update_limit=self._load_per_feed_fetch_limit
+                updates = (
+                    await feed.fetch_newest_publications(
+                        self._load_per_feed_fetch_limit
+                    )
+                    if self._first_index
+                    else await feed.fetch_newest_publications()
                 )
 
                 if len(updates) > 0:
@@ -402,6 +404,8 @@ class PublicationsTracker:
         self._last_polled = datetime.now()
         await asyncio.gather(*fetch_tasks)
         await asyncio.gather(*tasks)
+        if self._first_index:
+            self._first_index = False
 
 
 async def dual_event_loop(b_tracker: BillsTracker, p_tracker: PublicationsTracker):
