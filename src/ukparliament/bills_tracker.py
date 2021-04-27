@@ -1,7 +1,6 @@
 from aiohttp.client import ClientSession
 from bs4 import BeautifulSoup
 import asyncio
-import aiohttp
 from typing import Any, Union
 from .utils import BetterEnum
 from datetime import datetime
@@ -9,14 +8,23 @@ from datetime import datetime
 
 class FeedUpdate:
     def __init__(self, feed_update_object):
-        self._stage = feed_update_object.attrs['p4:stage'] if 'p4:stage' in feed_update_object.attrs else None
+        self._stage = (
+            feed_update_object.attrs["p4:stage"]
+            if "p4:stage" in feed_update_object.attrs
+            else None
+        )
         self._guid = feed_update_object.guid.text
-        self._bill_id = self._guid.split('/')[-1]
-        self._categories = [c.text.lower() for c in feed_update_object.find_all('category')]
+        self._bill_id = self._guid.split("/")[-1]
+        self._categories = [
+            c.text.lower() for c in feed_update_object.find_all("category")
+        ]
         self._title = feed_update_object.title.text
-        self._description = feed_update_object.description.text.replace('<description>', '')\
-                            .replace('</description>', '')
-        self._updated = datetime.strptime(feed_update_object.find('a10:updated').text, '%a, %d %b %Y %H:%M:%S %z')
+        self._description = feed_update_object.description.text.replace(
+            "<description>", ""
+        ).replace("</description>", "")
+        self._updated = datetime.strptime(
+            feed_update_object.find("a10:updated").text, "%a, %d %b %Y %H:%M:%S %z"
+        )
 
     def get_bill_id(self):
         return self._bill_id
@@ -46,7 +54,9 @@ class PublicationUpdate:
         self._category = publication_update.category.text
         self._title = publication_update.title.text
         self._description = publication_update.description.text
-        self._publication_date = datetime.strptime(publication_update.pubdate.text, '%a, %d %b %Y %H:%M:%S %z')
+        self._publication_date = datetime.strptime(
+            publication_update.pubdate.text, "%a, %d %b %Y %H:%M:%S %z"
+        )
 
     def get_guid(self):
         return self._guid
@@ -82,8 +92,7 @@ class BillsStorage:
 
 
 class Feed:
-    '''
-
+    """
 
     A feed is a object representation of an rss feed of a single bill.
     This feed will handle the poll request for that specific rss feed.
@@ -106,33 +115,67 @@ class Feed:
     storage:
         The storage medium in which the update guids will be stored for
         each bill.
-    '''
-    def __init__(self, bill_url: str):
-        self.bill_url = bill_url
-        self.bill_id = self.bill_url.split('/')[-1]
-        self.last_update = None
-        self.rss_individual_url = f'https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss'
-    
-    async def fetch_newest_publications(self, from_date: datetime = datetime.now(), update_limit: int = 20):
-        '''
-        Used to poll a bill for publication updates
-        '''
-        pass
+    """
 
-    async def process_poll_item(self, json_object, debug_log: bool = False):
-        '''
+    def __init__(self, bill_url: str, session: ClientSession):
+
+        self.bill_url = bill_url
+        self.bill_id = self.bill_url.split("/")[-1]
+        self.last_update = None
+        self.rss_individual_url = (
+            f"https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss"
+        )
+        self.session = session
+
+    async def fetch_newest_publications(
+        self, from_date: datetime = datetime.now(), update_limit: int = 20
+    ):
+        """
+        Used to poll a bill for publication updates
+        """
+        async with self.session.get(self.rss_individual_url) as resp:
+            if resp.status != 200:
+                raise Exception(
+                    f"Couldn't fetch individual bill rss feed for bill {self.bill_id}. Status Code: {resp.status}"
+                )
+            soup = BeautifulSoup(await resp.text())
+            rss_last_update = datetime.strptime(
+                soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
+            )
+
+            if rss_last_update.timestamp() < from_date.timestamp():
+                return
+
+            results = []
+            for item in soup.rss.channel.find_all("items"):
+                update = PublicationUpdate(item)
+
+                if update.get_publication().timestamp() < from_date.timestamp():
+                    break
+
+                if len(results) >= update_limit:
+                    break
+
+                results.append(update)
+
+            return results
+
+    async def process_poll_item(self, json_object):
+        """
         Polls individual items from the main rss feed. Used primarily to get all the other information
         that should have been achievable through the individual bill rss feed but wasn't because heaven
         forbid anything could be _that_ simple.
-        '''
+        """
         update = FeedUpdate(json_object)
         if self.last_update is None:
             self.last_update = update.get_update_date()
             return update
 
         if self.last_update.timestamp() < update.get_update_date().timestamp():
-            print(f"Feed {self.bill_id}: Last Update: {self.last_update} Date of FeedUpdate instance: "
-                    f"{update.get_update_date().timestamp()}")
+            print(
+                f"Feed {self.bill_id}: Last Update: {self.last_update} Date of FeedUpdate instance: "
+                f"{update.get_update_date().timestamp()}"
+            )
             self.last_update = update.get_update_date()
             return update
         return None
@@ -151,12 +194,12 @@ class Feed:
 
 
 class Conditions(BetterEnum):
-    PUBLICATIONS = 0,
-    LORDS = 1,
-    COMMONS = 2,
-    GOV_BILL = 3,
-    PRI_BILL = 4,
-    ROYAL_ASSENT = 5,
+    PUBLICATIONS = (0,)
+    LORDS = (1,)
+    COMMONS = (2,)
+    GOV_BILL = (3,)
+    PRI_BILL = (4,)
+    ROYAL_ASSENT = (5,)
     ALL = 7
 
 
@@ -170,15 +213,17 @@ class TrackerListener:
             return True
 
         if Conditions.LORDS in self.conditionals:
-            if 'lords' in update.get_categories():
+            if "lords" in update.get_categories():
                 return True
 
         if Conditions.COMMONS in self.conditionals:
-            if 'commons' in update.get_categories():
+            if "commons" in update.get_categories():
                 return True
 
         if Conditions.ROYAL_ASSENT in self.conditionals:
-            if 'royal assent' in (update.get_stage().lower() if update.get_stage() is not None else ''):
+            if "royal assent" in (
+                update.get_stage().lower() if update.get_stage() is not None else ""
+            ):
                 return True
         return False
 
@@ -188,16 +233,21 @@ class TrackerListener:
 
 class BillsTracker:
     def __init__(self, parliament, storage: BillsStorage, session: ClientSession):
-        self.session = session
-        self.parliament = parliament
-        self.feeds: list[Feed] = []
-        self.storage = storage
-        self.listeners: list[TrackerListener] = []
-        self.publication_listeners = []
-        self.last_update: Union[datetime, None] = None
+        self._session = session
+        self._parliament = parliament
+        self._feeds: list[Feed] = []
+        self._storage = storage
+        self._listeners: list[TrackerListener] = []
+        self._last_update: Union[datetime, None] = None
 
     # Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
-    async def start_event_loop(self, testing: bool = False):
+    def get_parliament(self):
+        return self._parliament
+
+    def get_storage(self):
+        return self._storage
+
+    async def start_event_loop(self):
         async def main():
             await asyncio.ensure_future(self.poll())
             await asyncio.sleep(30)
@@ -207,48 +257,51 @@ class BillsTracker:
 
     async def _poll_task(self, feed: Feed, main_poll_object: Any = None):
         handler_tasks = []
-        if self.listeners == 0:
+        if self._listeners == 0:
             return
         update = await feed.process_poll_item(main_poll_object)
         if update is None:
             return
-        is_stored = await self.storage.has_update_stored(feed.get_id(), update)
+        is_stored = await self._storage.has_update_stored(feed.get_id(), update)
         if is_stored is True:
             return
 
-        for listener in self.listeners:
+        for listener in self._listeners:
             if listener.meets_conditions(update) is False:
                 continue
             handler_tasks.append(listener.handle(feed, update))
-            await self.storage.add_feed_update(feed.get_id(), update)
+            await self._storage.add_feed_update(feed.get_id(), update)
 
         if len(handler_tasks) > 0:
             await asyncio.gather(*handler_tasks)
 
     def get_feed(self, id: str):
-        for feed in self.feeds:
+        for feed in self._feeds:
             if feed.get_id() == id:
                 return feed
         return None
 
     def register(self, func, conditionals: list[Conditions] = []):
-        self.listeners.append(TrackerListener(func, conditionals))
-
-    def register_publication(self, func):
-        self.publication_listeners.append(func)
+        self._listeners.append(TrackerListener(func, conditionals))
 
     # Polls the currently tracked feeds, creates new feeds that have not yet been tracked, and expires feeds
     # That have not been updated for at least two months.
 
     async def poll(self):
         tasks = []
-        async with self.session.get('https://bills-api.parliament.uk/Rss/allbills.rss') as resp:
+        async with self._session.get(
+            "https://bills-api.parliament.uk/Rss/allbills.rss"
+        ) as resp:
             if resp.status != 200:
-                raise Exception(f"Couldn't fetch rss feed for all bills. Status code: {resp.status}")
-            soup = BeautifulSoup(await resp.text(), features='lxml')
+                raise Exception(
+                    f"Couldn't fetch rss feed for all bills. Status code: {resp.status}"
+                )
+            soup = BeautifulSoup(await resp.text(), features="lxml")
 
-            rss_last_update = datetime.strptime(soup.rss.channel.lastbuilddate.text, '%a, %d %b %Y %H:%M:%S %z')
-            items = reversed(soup.rss.channel.find_all('item'))
+            rss_last_update = datetime.strptime(
+                soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
+            )
+            items = reversed(soup.rss.channel.find_all("item"))
 
             if self.last_update is not None:
                 if self.last_update.timestamp() >= rss_last_update.timestamp():
@@ -257,13 +310,13 @@ class BillsTracker:
             self.last_update = rss_last_update
 
             for item in items:
-                bill_id = item.guid.text.split('/')[-1]  # type: ignore
+                bill_id = item.guid.text.split("/")[-1]  # type: ignore
                 feed = None
-                if item.guid.text in [f.get_bill_url() for f in self.feeds]:
+                if item.guid.text in [f.get_bill_url() for f in self._feeds]:
                     feed = self.get_feed(bill_id)
                 else:
-                    feed = Feed(item.guid.text)
-                    self.feeds.append(feed)
+                    feed = Feed(item.guid.text, self._session)
+                    self._feeds.append(feed)
 
                 if feed is None:
                     continue
@@ -271,3 +324,75 @@ class BillsTracker:
 
         await asyncio.gather(*tasks)
         self.bills_first_polling = False
+
+    def get_feeds(self):
+        return self._feeds
+
+
+class PublicationsTracker:
+    def __init__(
+        self,
+        tracker: BillsTracker,
+        *,
+        pffl: int = 5,
+        index_from: datetime = None,
+    ):
+        self._tracker = tracker
+        self._last_polled = None
+        self._load_per_feed_fetch_limit = pffl
+        self._index_from = index_from
+        self._first_index = False
+        self.listeners = []
+
+    def register(self, listener_func):
+        self.listeners.append(listener_func)
+
+    def get_last_polled(self):
+        return self._last_polled
+
+    async def start_event_loop(self):
+        async def main():
+            await asyncio.ensure_future(self.poll())
+            await asyncio.sleep(30)
+            await main()
+
+        await main()
+
+    async def poll(self):
+        async def _task(update: PublicationUpdate, func):
+            await func(update)
+
+        for feed in self._tracker.get_feeds():
+            updates = feed.fetch_newest_publications(
+                self._index_from
+                if (self._index_from is not None and self._first_index is True)
+                else None,  # type: ignore
+                self._load_per_feed_fetch_limit if self._first_index is True else -1,
+            )
+
+            tasks = []
+
+            for update in updates:
+                if self._tracker.get_storage().has_publication_update(
+                    feed.get_id(), update
+                ):
+                    continue
+
+                await self._tracker.get_storage().add_publication_update(
+                    feed.get_id(), update
+                )
+                for listener in self.listeners:
+                    tasks.append(_task(listener, update))
+
+            self._last_polled = datetime.now()
+            await asyncio.gather(*tasks)
+
+
+async def dual_event_loop(b_tracker: BillsTracker, p_tracker: PublicationsTracker):
+    async def main():
+        await b_tracker.poll()
+        await p_tracker.poll()
+        await asyncio.sleep(30)
+        await main()
+
+    await main()
