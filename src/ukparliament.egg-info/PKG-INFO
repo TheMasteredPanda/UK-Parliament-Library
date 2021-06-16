@@ -1,11 +1,13 @@
-Metadata-Version: 1.2
+Metadata-Version: 2.1
 Name: ukparliament
-Version: 2.4.11
+Version: 2.5.11
 Summary: A Python Library used to fetch member, bills, and voting data from the UK Parliament Rest API
 Home-page: https://github.com/TheMasteredPanda/UK-Parliament-Library
 Author: TheMasteredPanda
 License: UNKNOWN
 Project-URL: Bug Tracker, https://github.com/TheMasteredPanda/UK-Parliament-Library/issues
-Description: UNKNOWN
 Platform: UNKNOWN
 Requires-Python: >=3.9
+
+UNKNOWN
+
