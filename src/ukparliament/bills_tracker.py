@@ -8,6 +8,15 @@ from datetime import datetime, timedelta
 
 class FeedUpdate:
     def __init__(self, feed_update_object):
+        """
+        A feed update is an entry on the RRS feed. This class processes the xml update into
+        an object that is then passed through registered listeners.
+
+        Parameters
+        ----------
+        feed_update_object: :class:'object'
+            The feed update object as a directory.
+        """
         self._stage = (
             feed_update_object.attrs["p4:stage"]
             if "p4:stage" in feed_update_object.attrs
@@ -53,6 +62,15 @@ class FeedUpdate:
 
 class PublicationUpdate:
     def __init__(self, publication_update):
+        """
+        A publication update is similar to that of a :class:`FeedUpdate`. However the difference is that
+        the publication updates are feed updates of individual bills.
+
+        Parameters
+        ----------
+        publication_update: :class:`object`
+            The publication feed update in parsed by bs4.
+        """
         self._guid = publication_update.guid.text
         self._category = publication_update.category.text
         self._title = publication_update.title.text
@@ -61,36 +79,109 @@ class PublicationUpdate:
             publication_update.pubdate.text, "%a, %d %b %Y %H:%M:%S %z"
         )
 
-    def get_guid(self):
+    def get_guid(self) -> str:
+        """
+        Returns GUID of update.
+        """
         return self._guid
 
-    def get_category(self):
+    def get_category(self) -> str:
+        """
+        Returns category of update.
+        """
         return self._category
 
-    def get_title(self):
+    def get_title(self) -> str:
+        """
+        Returns title of update.
+        """
         return self._title
 
-    def get_description(self):
+    def get_description(self) -> str:
+        """
+        Returns description of update.
+        """
         return self._description
 
-    def get_publication(self):
+    def get_publication(self) -> datetime:
+        """
+        Returns publication date of update.
+        """
         return self._publication_date
 
 
 class BillsStorage:
+    """
+    An interface used by :class:`BillsTracker`. This is used to interface with different storage mediums.
+
+    This is used primarily to not reannounce already announced feed updates.
+    """
+
     async def add_feed_update(self, bill_id: int, update: FeedUpdate):
+        """
+        Add a feed update to the storage medium.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a bill associated with the :class:`FeedUpdate`
+        update: :class:`FeedUpdate`
+            The feed update.
+        """
         pass
 
     async def has_update_stored(self, bill_id: int, update: FeedUpdate):
+        """
+        Check if a feed update associated with a bill has been stored in the storage medium.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a bill associated with the :class:`FeedUpdate`
+        update: :class:`FeedUpdate`
+            The feed update.
+        """
         pass
 
     async def get_last_update(self, bill_id: int):
+        """
+        Fetches the most recent entry associated with the bill id.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a bill associated with stored feed entries (updates).
+
+        Returns
+        -------
+        The most recent stored entry of a feed entry (slimmed down dictionary of :class:`FeedUpdate` data)
+        """
         pass
 
     async def add_publication_update(self, bill_id: int, update: PublicationUpdate):
+        """
+        Add a publication feed update to the storage medium.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a bill associated with :class:`PublicationUpdate`.
+        update: :class:`PublicationUpdate`
+            The publication update.
+        """
         pass
 
     async def has_publication_update(self, bill_id: int, update: PublicationUpdate):
+        """
+        Check if a publication updated associated with a bill has been stored in the storage medium.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a bill associated with :class:`PublicationUpdate`
+        update: :class:`PublicationUpdate`
+            The publication update.
+        """
         pass
 
 
@@ -127,7 +218,7 @@ class Feed:
         self.last_update = None
         self.last_publication_update = None
         self.rss_individual_url = (
-            f"https://bills-api.parliament.uk/Rss/Bills/{self.bill_id}.rss"
+            f"https://bills-api.parliament.uk/api/v1/Rss/Bills/{self.bill_id}.rss"
         )
         self.session = session
 
@@ -137,6 +228,15 @@ class Feed:
     ):
         """
         Used to poll a bill for publication updates
+
+        Parameters
+        ----------
+        update_limit: :class:`int`
+            The amount to fetch in new updates.
+
+        Returns
+        -------
+        A list of :class:`PublicationUpdate` instances.
         """
         async with self.session.get(self.rss_individual_url) as resp:
             if resp.status != 200:
@@ -192,19 +292,42 @@ class Feed:
         return None
 
     def set_last_update(self, date):
+        """
+        Set last update date.
+
+        Parameters
+        ----------
+        date: :class:`datetime`
+            Last update date instance..
+        """
         self.last_update = date
 
-    def get_last_update(self):
+    def get_last_update(self) -> Union[datetime, None]:
+        """
+        Returns last update date.
+        """
         return self.last_update
 
-    def get_id(self):
+    def get_id(self) -> int:
+        """
+        Returns bill id of the feed.
+        """
         return int(self.bill_id)
 
-    def get_bill_url(self):
+    def get_bill_url(self) -> str:
+        """
+        Returns url of the bill the feed is listening on.
+        """
         return self.bill_url
 
 
 class Conditions(BetterEnum):
+    """
+    A set of enums used to determine what each registered listener should be invoked for.
+    For example, a listener with the PUBLICATIONS condition will only be invoked upon
+    a publication feed update.
+    """
+
     PUBLICATIONS = (0,)
     LORDS = (1,)
     COMMONS = (2,)
@@ -216,10 +339,34 @@ class Conditions(BetterEnum):
 
 class TrackerListener:
     def __init__(self, func, conditions):
+        """
+        A class wrapping the function that will be invoked upon a feed update, provided
+        the conditions are met.
+
+        Parameters
+        ----------
+        func: :class:`func`
+            The function to be invoked when the conditions are met.
+        conditions: :class:`list`
+            A list or array of conditions used to determine whether the listener should
+            be invoked.
+        """
         self.func = func
         self.conditionals = conditions
 
     def meets_conditions(self, update: FeedUpdate):
+        """
+        Checks if the conditions are met to invoke the listener.
+
+        Parameters
+        ----------
+        update: :class:`FeedUpdate`
+            The feed update instance.
+
+        Returns
+        -------
+        A :class:`bool` that is True if all conditions are met, else False.
+        """
         if Conditions.ALL in self.conditionals:
             return True
 
@@ -244,6 +391,18 @@ class TrackerListener:
 
 class BillsTracker:
     def __init__(self, parliament, storage: BillsStorage, session: ClientSession):
+        """
+        A tracker that tracks bills via a dedicated RRS Feed.
+
+        Parameters
+        ----------
+        parliament: :class:`UKParliament`
+            The instance of the main class.
+        storage: :class:`BillsStorage`
+            The storage interface the tracker will use.
+        session: :class:`ClientSession`
+            The aiohttp client session.
+        """
         self._session = session
         self._parliament = parliament
         self._feeds: list[Feed] = []
@@ -253,12 +412,22 @@ class BillsTracker:
 
     # Loads previously tracked but not yet expired feeds as well as feeds that have not yet been tracked.
     def get_parliament(self):
+        """
+        Returns the :class:`UKParliament` instance.
+        """
         return self._parliament
 
     def get_storage(self):
+        """
+        Returns the :class:`BillsStorage` instance.
+        """
         return self._storage
 
     async def start_event_loop(self):
+        """
+        Starts the event loop.
+        """
+
         async def main():
 
             await asyncio.ensure_future(self.poll())
@@ -268,6 +437,18 @@ class BillsTracker:
         await main()
 
     async def _poll_task(self, feed: Feed, main_poll_object: Any = None):
+        """
+        The main function, written to process a feed entry on the rss feed and identify if it is an update.
+
+        Parameters
+        ----------
+        feed: :class:`Feed`
+            The feed of a bill.
+
+        main_poll_object: :class:`Any`
+            The feed entry.
+
+        """
         handler_tasks = []
         if self._listeners == 0:
             return
@@ -288,21 +469,42 @@ class BillsTracker:
             await asyncio.gather(*handler_tasks)
 
     def get_feed(self, id: str):
+        """
+        Returns a :class:`Feed` instance if one stored with the provided 'id' exists.
+
+        Parameters
+        ----------
+        id: :class:`id`
+            The bill id of the feed.
+        """
         for feed in self._feeds:
             if feed.get_id() == id:
                 return feed
         return None
 
     def register(self, func, conditionals: list[Conditions] = []):
+        """
+        Registers a listener with the tracker.
+
+        Parameters
+        ----------
+        func: :class:`func`
+            The function that will be invoked if the handler's conditions are met.
+        conditionals: :class:`list`
+            A list of conditions that determins when the handler will invoke the listener.
+        """
         self._listeners.append(TrackerListener(func, conditionals))
 
     # Polls the currently tracked feeds, creates new feeds that have not yet been tracked, and expires feeds
     # That have not been updated for at least two months.
 
     async def poll(self):
+        """
+        The main event loop function. Used to fetch the current content of the rss feed and process it.
+        """
         tasks = []
         async with self._session.get(
-            "https://bills-api.parliament.uk/Rss/allbills.rss"
+            "https://bills-api.parliament.uk/api/v1/Rss/allbills.rss"
         ) as resp:
             if resp.status != 200:
                 raise Exception(
@@ -348,6 +550,18 @@ class PublicationsTracker:
         *,
         pffl: int = 10,
     ):
+        """
+        Publications tracker tracks publications of individual bills. There is often on publication for each bill.
+        This is not fully developed yet, and can result in heaps of data being listened to, making it quite a task
+        to process.
+
+        Parameters
+        ----------
+        tracker: :class:`BillsTracker`
+            The bills tracker instance.
+        pffl: :class:`int`
+            The limit each tracker can poll of new updates.
+        """
         self._tracker = tracker
         self._last_polled = None
         self._load_per_feed_fetch_limit = pffl
@@ -355,12 +569,22 @@ class PublicationsTracker:
         self.listeners = []
 
     def register(self, listener_func):
+        """
+        Registers a publication update.
+        """
         self.listeners.append(listener_func)
 
-    def get_last_polled(self):
+    def get_last_polled(self) -> Union[datetime, None]:
+        """
+        Returns the date of the last poll of publications.
+        """
         return self._last_polled
 
     async def start_event_loop(self):
+        """
+        The main event loop.
+        """
+
         async def main():
             await asyncio.ensure_future(self.poll())
             await asyncio.sleep(30)
@@ -369,6 +593,10 @@ class PublicationsTracker:
         await main()
 
     async def poll(self):
+        """
+        The main event loop function. Polls the publications of each feed.
+        """
+
         async def _task(update: PublicationUpdate, func):
             await func(update)
 
@@ -409,6 +637,11 @@ class PublicationsTracker:
 
 
 async def dual_event_loop(b_tracker: BillsTracker, p_tracker: PublicationsTracker):
+    """
+    Used in the event that both the :class:`BillsTracker` and :class:`PublicationsTracker` are
+    instantiated in the main class.
+    """
+
     async def main():
         await b_tracker.poll()
         await p_tracker.poll()

@@ -63,18 +63,40 @@ class UKParliament:
         self.divisions_tracker = None
         self.publications_tracker = None
 
-    def start_publications_tracker(
-        self, tracker: BillsTracker, *, pffl: int = 1, index_from: datetime = None
-    ):
+    def start_publications_tracker(self, tracker: BillsTracker):
+        """
+        Creates a tracker to track publications related to a bill.
+
+        Parameters
+        ----------
+        tracker: :class:`BillsTracker`
+            The tracker for bills.
+
+        """
         self.publications_tracker = PublicationsTracker(tracker)
 
     def get_publications_tracker(self):
+        """
+        Returns a publications tracker instance.
+        """
         return self.publications_tracker
 
     def start_bills_tracker(self, storage: BillsStorage):
+        """
+        Creates a tracker to track bills being passed through Parliament.
+
+        Parameters
+        ----------
+        storage: :class:`BillsStorage`
+            The inferface used to store data relevant to the tracker.
+        """
         self.bills_tracker = BillsTracker(self, storage, self.session)
 
     async def load_bills_tracker(self):
+        """
+        Loads the bills tracker and publications tracker if a PublicationsTracker instance
+        is present, otherwise just the BillsTracker instance.
+        """
         if self.bills_tracker is None:
             return
         if self.publications_tracker is None:
@@ -83,24 +105,47 @@ class UKParliament:
             await dual_event_loop(self.bills_tracker, self.publications_tracker)
 
     def get_bills_tracker(self) -> Union[BillsTracker, None]:
+        """
+        Returns the bills tracker instance.
+        """
         return self.bills_tracker
 
     def start_divisions_tracker(self, storage: DivisionStorage):
+        """
+        Creates a tracker to track divisions, both from the House of Commons
+        and the House of Lords.
+
+        Parameters
+        ----------
+        storage: :class:`DivisionStorage`
+            The interface used to store data relevant to the tracker.
+        """
         self.divisions_tracker = DivisionsTracker(self, storage)
 
     async def load_divisions_tracker(self):
+        """
+        Loads the DivisionTracker instance, starts the event loop.
+        """
         if self.divisions_tracker is None:
             return
         await self.divisions_tracker.start_event_loop()
 
-    def get_divisions_tracker(self):
+    def get_divisions_tracker(self) -> Union[DivisionsTracker, None]:
+        """
+        Returns the DivisionTracker instance.
+        """
         return self.divisions_tracker
 
     async def load(self):
+        """
+        Loads the UKParliament instance. Indexed parties, party members (MPs and Lords),
+        Bill types and Bill stages.
+        """
         async with self.session.get(
             f"{utils.URL_MEMBERS}/Parties/GetActive/Commons"
         ) as resp:
             if resp.status != 200:
+                print(resp.url)
                 raise Exception("Couldn't fetch active parties in the House of Commons")
             content = await resp.json()
 
@@ -121,6 +166,7 @@ class UKParliament:
                     self.parties.append(Party(item))
                 else:
                     party.set_lords_party()
+
         json_party_members = await utils.load_data(
             f"{utils.URL_MEMBERS}/Members/Search?IsCurrentMember=true", self.session
         )
@@ -153,9 +199,23 @@ class UKParliament:
         )
 
         for json_bill_stage in json_bill_stages:
-            self.bill_stages.append(BillStage(json_bill_stage))
+            bill_stage = BillStage(json_bill_stage)
+            self.bill_stages.append(bill_stage)
 
     async def get_biography(self, member: PartyMember) -> PartyMemberBiography:
+        """
+        Fetches the biography of a party member (Lord or Member of Parliament).
+
+        Parameters
+        ----------
+        member: :class:`PartyMember`
+            A Member of Parliament or Lord.
+
+        Returns
+        -------
+        Returns a :class:`PartyMemberBiography` instance, containing information about a
+        members biography fetches from the UKParliament REST API.
+        """
         async with self.session.get(
             f"https://members-api.parliament.uk/api/Members/{member.get_id()}/Biography"
         ) as bio_resp:
@@ -168,6 +228,19 @@ class UKParliament:
             return PartyMemberBiography(bio_content)
 
     async def get_election_results(self, member: PartyMember) -> list[ElectionResult]:
+        """
+        Fetches the election results of a constituency via the representing member.
+
+        Parameters
+        ----------
+        member: :class:`PartyMember`
+            The Member of Parliament representing a constituency.
+
+        Returns
+        -------
+        A list of :class:`ElectionResult` instances, containg the election result history of
+        that constituency.
+        """
         with self.election_results_lock:
             cached_obj = self.election_results_cache.get(
                 member._get_membership_from_id()
@@ -183,6 +256,18 @@ class UKParliament:
         return elections  # type: ignore
 
     async def get_voting_history(self, member: PartyMember) -> list[VotingEntry]:
+        """
+        Fetches the voting history of a party member.
+
+        Parameters
+        ----------
+        member: :class:`PartyMember`
+            The Member of Parliament or Lord.
+
+        Returns
+        -------
+        A list of :class:`VotingEntry` instances.
+        """
         with self.voting_history_lock:
             cached_obj = self.voting_history_cache.get(member.get_id())
             if cached_obj is not None:
@@ -198,18 +283,46 @@ class UKParliament:
         return await self.get_voting_history(member)
 
     def get_party_by_name(self, name: str) -> Union[Party, None]:
+        """
+        Fetches a :class:`Party` instance via the party name.
+
+        Parameters
+        ----------
+        name: :class:`str`
+            Name of the Party to fetch.
+
+        Returns
+        -------
+        Returns an instance of a :class:`Party`
+        """
         for party in self.parties:
             if party.get_name().lower() == name.lower():
                 return party
         return None
 
     def get_party_by_id(self, party_id: int) -> Union[Party, None]:
+        """
+        Fetches a :class:`Party` instance via the party id.
+
+        Parameters
+        ----------
+        party_id:`int`
+            The id of a party.
+
+        Returns
+        -------
+        Returns an instance of a :class:`Party`
+        """
         for party in self.parties:
             if party.get_party_id() == party_id:
                 return party
         return None
 
     def get_commons_members(self) -> list[PartyMember]:
+        """
+        Returns a list of :class:`PartyMember` instances,
+        all of which containing information on Members of Parliament.
+        """
         members = []
 
         for party in self.parties:
@@ -218,6 +331,10 @@ class UKParliament:
         return members
 
     def get_lords_members(self) -> list[PartyMember]:
+        """
+        Returns a list of :class:`PartyMember` instances,
+        all of which containing information on Aristocrats (Lords)
+        """
         members = []
 
         for party in self.parties:
@@ -226,6 +343,18 @@ class UKParliament:
         return members
 
     def get_member_by_id(self, member_id: int) -> Union[PartyMember, None]:
+        """
+        Fetches a :class:`PartyMember` via the member id.
+
+        Parameters
+        ----------
+        member_id: :class:`int`
+            The id of a :class:`PartyMember`
+
+        Returns
+        -------
+        A :class:`PartyMember` instance.
+        """
         for member in self.get_commons_members():
             if member.get_id() == member_id:
                 return member
@@ -235,6 +364,18 @@ class UKParliament:
         return None
 
     def get_member_by_name(self, member_name: str) -> Union[PartyMember, None]:
+        """
+        Fetches a :class:`PartyMember` via the member's name.
+
+        Parameters
+        ----------
+        member_name: :class:`str`
+            The name of a :class:`PartyMember`
+
+        Returns
+        -------
+        A :class:`PartyMember` instance.
+        """
         for member in self.get_commons_members():
             if member_name.lower() is member.get_display_name().lower():
                 return member
@@ -242,6 +383,20 @@ class UKParliament:
 
     # Cheap Workaround to using a cache, something I'll implement later
     async def lazy_load_member(self, member_id: int) -> PartyMember:
+        """
+        Fetches a party member lazily. Meaning that the party member data is fetched and
+        a :class:`PartyMember` is instantiated rather than the data being indexed when
+        within the :func:`load` function.
+
+        Parameters
+        ----------
+        member_id:`int`
+            The id of a :class:`PartyMember`
+
+        Returns
+        -------
+        A :class:`PartyMember` instance.
+        """
         with self.old_member_cache_lock:
             cached_obj = self.old_member_cache.get(member_id)
             if cached_obj is not None:
@@ -256,13 +411,31 @@ class UKParliament:
             member = PartyMember(content)
             return member
 
-    def get_bill_stages(self):
+    def get_bill_stages(self) -> list[BillStage]:
+        """
+        Returns a list of :class:`BillStage` instances.
+        """
         return self.bill_stages
 
-    def get_bill_types(self):
+    def get_bill_types(self) -> list[BillType]:
+        """
+        Returns a list of :class:`BillType` instances.
+        """
         return self.bill_types
 
     async def get_bill(self, bill_id: int) -> Bill:
+        """
+        Fetches a :class:`Bill` via the bill's id.
+
+        Parameters
+        ----------
+        bill_id: :class:`int`
+            The id of a :class:`Bill`
+
+        Returns
+        -------
+        A :class:`Bill` instance.
+        """
         with self.bills_cache_lock:
             cached_obj = self.bills_cache.get(bill_id)
             if cached_obj is not None:
@@ -280,6 +453,18 @@ class UKParliament:
             return bill
 
     async def search_bills(self, url: str) -> list[Bill]:
+        """
+        Fetches a list of bills returned from the url, usually built from :class:`SearchBillsBuilder`
+
+        Parameters
+        ----------
+        url: :class:`str`
+            The url of a bill search.
+
+        Returns
+        -------
+        A list of :class:`Bill` instances.
+        """
         with self.bill_search_cache_lock:
             cached_obj = self.bill_search_cache.get(url)
             if cached_obj is not None:
@@ -308,7 +493,19 @@ class UKParliament:
                 self.bill_search_cache[url] = bills
             return bills
 
-    async def get_commons_division(self, division_id: int):
+    async def get_commons_division(self, division_id: int) -> CommonsDivision:
+        """
+        Fetches a :class:`CommonsDivision` via the division id.
+
+        Parameters
+        ----------
+        division_id: :class:`int`
+            The id of a division.
+
+        Returns
+        -------
+        Returns a :class:`CommonsDivision` instance.
+        """
         with self.division_cache_lock:
             cached_obj = self.division_cache.get(division_id)
             if cached_obj is not None:
@@ -331,6 +528,18 @@ class UKParliament:
             return division
 
     async def get_lords_division(self, division_id: int):
+        """
+        Fetches a :class:`LordsDivision` via the division id.
+
+        Parameters
+        ----------
+        division_id: :class:`int`
+            The id of a division.
+
+        Returns
+        -------
+        Returns a :class:`LordsDivision` instance.
+        """
         with self.division_cache_lock:
             cached_obj = self.division_cache.get(division_id)
             if cached_obj is not None:
@@ -353,89 +562,149 @@ class UKParliament:
     async def search_for_lords_divisions(
         self, search_term: str = "", result_limit: int = -1
     ) -> list[LordsDivision]:
-        with self.division_search_lords_lock:
-            cached_obj = self.division_search_lords_cache.get(search_term.lower())
-            if cached_obj is not None:
-                return cached_obj
+        """
+        Fetches a list of :class:`LordsDivision` instances via a string (search term)
+
+        Parameters
+        ----------
+        search_term: :class:`str`
+            The search term to search for in lords divisions.
+        result_limit: :class:`int`
+            The limit of divsions to return.
+
+        Returns
+        -------
+        Returns a list of :class:`LordsDivision` instances.
+        """
+        if search_term != "":
+            with self.division_search_lords_lock:
+                cached_obj = self.division_search_lords_cache.get(search_term.lower())
+                if cached_obj is not None:
+                    return cached_obj
+
+        async def get_total_results(search_term: str):
+            async with self.session.get(
+                (
+                    f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults"
+                    f"?SearchTerm={formatted_search_term}"
+                )
+            ) as resp:
+                if resp.status != 200:
+                    raise Exception(
+                        "Couldn't fetch total search results for division search with query: "
+                        f"{search_term}. Status Code: {resp.status}"
+                    )
+                return await resp.json()
 
         formatted_search_term = "%20".join(search_term.split(" "))
-        async with self.session.get(
-            f"{utils.URL_LORDS_VOTES}/Divisions/searchTotalResults"
-            f"?SearchTerm={formatted_search_term}"
-            if search_term != ""
-            else ""
-        ) as resp:
-            if resp.status != 200:
-                raise Exception(
-                    "Couldn't fetch total search results for division search with query: "
-                    f"{search_term}. Status Code: {resp.status}"
-                )
+        total_search_results = (
+            await get_total_results(formatted_search_term)
+            if result_limit == -1
+            else result_limit
+        )
 
-            total_seach_results = await resp.json()
-            division_items = await utils.load_data(
-                f"{utils.URL_LORDS_VOTES}/Divisions/search"
-                f"?SearchTerm={formatted_search_term}"
-                if search_term != ""
-                else "",
-                self.session,
-                total_seach_results if result_limit == -1 else result_limit,
-            )
+        division_items = await utils.load_data(
+            f"{utils.URL_LORDS_VOTES}/Divisions/search"
+            + (f"?SearchTerm={formatted_search_term}" if search_term != "" else ""),
+            self.session,
+            total_search_results,
+        )
 
-            divisions = []
+        divisions = []
 
-            for item in division_items:
-                division = LordsDivision(item)
-                await self._populate_lords_division(division)
-                divisions.append(division)
+        for item in division_items:
+            division = LordsDivision(item)
+            await self._populate_lords_division(division)
+            divisions.append(division)
 
+        if search_term != "":
             with self.division_search_lords_lock:
                 self.division_search_lords_cache[search_term.lower()] = divisions
-            return divisions
+
+        return divisions
 
     async def search_for_commons_divisions(
         self, search_term: str = "", result_limit: int = -1
     ) -> list[CommonsDivision]:
-        with self.division_search_commons_lock:
-            cached_obj = self.division_search_commons_cache.get(search_term.lower())
-            if cached_obj is not None:
-                return cached_obj
+        """
+        Fetches a list of :class:`CommonsDivision` isntances via a string (search term)
+
+        Parameters
+        ----------
+        search_term: :class:`str`
+            The search term to search for in the commons divisions.
+        result_limit: :class:`int`
+            The limit of commons divisions to return.
+
+        Returns
+        -------
+        Returns a list of :class:`CommonsDivision` instances.
+        """
+        if search_term != "":
+            with self.division_search_commons_lock:
+                cached_obj = self.division_search_commons_cache.get(search_term.lower())
+                if cached_obj is not None:
+                    return cached_obj
+
+        async def get_total_results(search_term: str):
+            async with self.session.get(
+                f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults"
+                f"?queryParameters.searchTerm={formatted_search_term}"
+            ) as resp:
+                if resp.status != 200:
+                    raise Exception(
+                        "Couldn't fetch total search results for division search with query:"
+                        f" '{search_term}. Status Code: {resp.status}"
+                    )
+
+                total_search_results = await resp.json()
+                return total_search_results
 
         formatted_search_term = "%20".join(search_term.split(" "))
-        async with self.session.get(
-            f"{utils.URL_COMMONS_VOTES}/divisions.json/searchTotalResults"
-            f"?queryParameters.searchTerm={formatted_search_term}"
-            if search_term != ""
-            else ""
-        ) as resp:
-            if resp.status != 200:
-                raise Exception(
-                    f"Couldn't fetch total search results for division search with query:"
-                    f" '{search_term}'. Status Code: {resp.status}"
-                )
+        total_search_results = (
+            await get_total_results(formatted_search_term)
+            if result_limit == -1
+            else result_limit
+        )
 
-            total_search_results = await resp.json()
-            division_items = await utils.load_data(
-                f"{utils.URL_COMMONS_VOTES}/divisions.json/search"
+        division_items = await utils.load_data(
+            f"{utils.URL_COMMONS_VOTES}/divisions.json/search"
+            + (
                 f"?queryParameters.searchTerm={formatted_search_term}"
                 if search_term != ""
-                else "",
-                self.session,
-                total_search_results if result_limit == -1 else result_limit,
-            )
-            divisions = []
-            for item in division_items:
-                division = CommonsDivision(item)
-                await self._populate_commons_division(division)
-                divisions.append(division)
+                else ""
+            ),
+            self.session,
+            total_search_results,
+        )
+        divisions = []
+        for item in division_items:
+            division = CommonsDivision(item)
+            await self._populate_commons_division(division)
+            divisions.append(division)
 
+        if search_term != "":
             with self.division_search_commons_lock:
                 self.division_search_commons_cache[search_term.lower()] = divisions
-            return divisions
+
+        return divisions
 
     def get_parties(self) -> list[Party]:
+        """
+        Fetches a list of :class:`Party` instances.
+        """
         return self.parties
 
     async def _populate_lords_division(self, division: LordsDivision):
+        """
+        Populates a :class:`LordsDivision` with references to data already
+        indexed, primarily :class:`PartyMember` instances.
+
+        Parameters
+        ----------
+        division: :class:`LordsDivision`
+            The division instance to populate.
+        """
         aye_tellers = []
         a_teller_tasks = list(
             map(
@@ -475,6 +744,15 @@ class UKParliament:
         division.set_aye_members(aye_members)
 
     async def _populate_commons_division(self, division: CommonsDivision):
+        """
+        Populates a :class:`CommonsDivision` with references to data already
+        indexed, primarily :class:`PartyMember` instances.
+
+        Parameters
+        ----------
+        division: :class:`CommonsDivision`
+            The division instance to populate.
+        """
         aye_tellers = []
         a_teller_tasks = list(
             map(
