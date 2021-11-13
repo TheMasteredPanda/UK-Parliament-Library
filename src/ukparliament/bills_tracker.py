@@ -514,7 +514,9 @@ class BillsTracker:
                     f"Couldn't fetch rss feed for all bills. Status code: {resp.status}"
                 )
             print("Response is 200.")
-            soup = BeautifulSoup(await resp.text(), features="lxml")
+            r_text = await resp.text()
+            print("Got text.")
+            soup = BeautifulSoup(r_text, features="lxml")
             print("Got soup.")
 
             rss_last_update = datetime.strptime(
