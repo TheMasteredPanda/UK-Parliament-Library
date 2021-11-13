@@ -505,7 +505,6 @@ class BillsTracker:
         """
         The main event loop function. Used to fetch the current content of the rss feed and process it.
         """
-        print("Polling rss feed.")
         tasks = []
         async with self._session.get(
             "https://bills-api.parliament.uk/api/v1/Rss/allbills.rss"
@@ -514,18 +513,13 @@ class BillsTracker:
                 raise Exception(
                     f"Couldn't fetch rss feed for all bills. Status code: {resp.status}"
                 )
-            print("Response is 200.")
             r_text = await resp.text()
-            print("Got text.")
-            print(r_text)
             soup = BeautifulSoup(r_text, features="lxml")
-            print("Got soup.")
 
             rss_last_update = datetime.strptime(
                 soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
             )
             items = reversed(soup.rss.channel.find_all("item"))
-            print(f"Items: {len(list(items))}")
 
             if self._last_update is not None:
                 if self._last_update.timestamp() >= rss_last_update.timestamp():
@@ -546,7 +540,6 @@ class BillsTracker:
 
                 if feed is None:
                     continue
-                print(f"Appending item task: {task_num}")
                 task_num += 1
                 tasks.append(self._poll_task(feed, item))
 
