@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any, Union
 
+import lxml
 from aiohttp.client import ClientSession
 from bs4 import BeautifulSoup
 
