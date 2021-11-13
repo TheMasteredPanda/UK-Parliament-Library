@@ -513,8 +513,9 @@ class BillsTracker:
                 raise Exception(
                     f"Couldn't fetch rss feed for all bills. Status code: {resp.status}"
                 )
-            print("Response is not 200.")
+            print("Response is 200.")
             soup = BeautifulSoup(await resp.text(), features="lxml")
+            print("Got soup.")
 
             rss_last_update = datetime.strptime(
                 soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
