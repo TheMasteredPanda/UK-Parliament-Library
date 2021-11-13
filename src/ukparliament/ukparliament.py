@@ -1,29 +1,23 @@
+import asyncio
 from datetime import datetime
 from threading import Lock
+from typing import Union
+
+import aiohttp
+import bs4
 from aiohttp.client import ClientSession
 from cachetools import TTLCache
-from typing import Union
-from .structures.members import (
-    Party,
-    PartyMember,
-    ElectionResult,
-    PartyMemberBiography,
-    VotingEntry,
-)
-from .members import er_task, vh_task
-from .structures.bills import BillType, Bill, BillStage, CommonsDivision, LordsDivision
-from .bills_tracker import (
-    BillsTracker,
-    BillsStorage,
-    PublicationsTracker,
-    dual_event_loop,
-)
-from .divisions_tracker import DivisionsTracker, DivisionStorage
-from .bills import _meta_bill_task
+
 from . import utils
-from .bills import division_task
-import asyncio
-import aiohttp
+from .bills import _meta_bill_task, division_task
+from .bills_tracker import (BillsStorage, BillsTracker, PublicationsTracker,
+                            dual_event_loop)
+from .divisions_tracker import DivisionStorage, DivisionsTracker
+from .members import er_task, vh_task
+from .structures.bills import (Bill, BillStage, BillType, CommonsDivision,
+                               LordsDivision)
+from .structures.members import (ElectionResult, Party, PartyMember,
+                                 PartyMemberBiography, VotingEntry)
 
 """
 ---------------------------------------------------------
@@ -62,6 +56,7 @@ class UKParliament:
         self.bills_tracker = None
         self.divisions_tracker = None
         self.publications_tracker = None
+        print(f"BS4 Version: {bs4.__version__}")
 
     def start_publications_tracker(self, tracker: BillsTracker):
         """
