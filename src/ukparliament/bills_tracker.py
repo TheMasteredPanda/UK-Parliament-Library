@@ -516,6 +516,7 @@ class BillsTracker:
             print("Response is 200.")
             r_text = await resp.text()
             print("Got text.")
+            print(r_text)
             soup = BeautifulSoup(r_text, features="lxml")
             print("Got soup.")
 
