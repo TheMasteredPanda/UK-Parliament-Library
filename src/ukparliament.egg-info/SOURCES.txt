@@ -1,7 +1,0 @@
-README.md
-setup.cfg
-setup.py
-src/ukparliament.egg-info/PKG-INFO
-src/ukparliament.egg-info/SOURCES.txt
-src/ukparliament.egg-info/dependency_links.txt
-src/ukparliament.egg-info/top_level.txt

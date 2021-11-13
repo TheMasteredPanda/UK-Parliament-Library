@@ -1,9 +1,11 @@
+import asyncio
+from datetime import datetime, timedelta
+from typing import Any, Union
+
 from aiohttp.client import ClientSession
 from bs4 import BeautifulSoup
-import asyncio
-from typing import Any, Union
+
 from .utils import BetterEnum
-from datetime import datetime, timedelta
 
 
 class FeedUpdate:
@@ -502,6 +504,7 @@ class BillsTracker:
         """
         The main event loop function. Used to fetch the current content of the rss feed and process it.
         """
+        print("Polling rss feed.")
         tasks = []
         async with self._session.get(
             "https://bills-api.parliament.uk/api/v1/Rss/allbills.rss"
@@ -510,18 +513,22 @@ class BillsTracker:
                 raise Exception(
                     f"Couldn't fetch rss feed for all bills. Status code: {resp.status}"
                 )
+            print("Response is not 200.")
             soup = BeautifulSoup(await resp.text(), features="lxml")
 
             rss_last_update = datetime.strptime(
                 soup.rss.channel.lastbuilddate.text, "%a, %d %b %Y %H:%M:%S %z"
             )
             items = reversed(soup.rss.channel.find_all("item"))
+            print(f"Items: {len(list(items))}")
 
             if self._last_update is not None:
                 if self._last_update.timestamp() >= rss_last_update.timestamp():
                     return
 
             self._last_update = rss_last_update
+
+            task_num = 0
 
             for item in items:
                 bill_id = item.guid.text.split("/")[-1]  # type: ignore
@@ -534,6 +541,8 @@ class BillsTracker:
 
                 if feed is None:
                     continue
+                print(f"Appending item task: {task_num}")
+                task_num += 1
                 tasks.append(self._poll_task(feed, item))
 
         await asyncio.gather(*tasks)
